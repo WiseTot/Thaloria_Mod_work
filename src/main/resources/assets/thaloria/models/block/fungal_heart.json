@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "thaloria:block/fungal_heart",
+    "particle": "thaloria:block/fungal_heart"
+  }
+}

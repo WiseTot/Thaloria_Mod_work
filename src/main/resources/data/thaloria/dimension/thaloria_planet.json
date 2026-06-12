@@ -1,0 +1,36 @@
+{
+  "type": "thaloria:thaloria_planet_type",
+  "generator": {
+    "type": "minecraft:noise",
+    "biome_source": {
+      "type": "minecraft:multi_noise",
+      "biomes": [
+        {
+          "biome": "thaloria:thaloria_biome",
+          "parameters": {
+            "temperature": [-1.0, 0.6],
+            "humidity": 0.0,
+            "continentalness": 0.0,
+            "erosion": 0.0,
+            "depth": 0.0,
+            "weirdness": 0.0,
+            "offset": 0.0
+          }
+        },
+        {
+          "biome": "thaloria:thaloria_boulders",
+          "parameters": {
+            "temperature": [0.65, 1.0],
+            "humidity": 0.0,
+            "continentalness": 0.0,
+            "erosion": 0.0,
+            "depth": 0.0,
+            "weirdness": 0.0,
+            "offset": 0.0
+          }
+        }
+      ]
+    },
+    "settings": "thaloria:thaloria_noise"
+  }
+}

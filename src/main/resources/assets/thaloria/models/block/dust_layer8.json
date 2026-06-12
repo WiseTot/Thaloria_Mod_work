@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/snow_block",
+  "textures": {
+    "all": "thaloria:block/dust"
+  }
+}
