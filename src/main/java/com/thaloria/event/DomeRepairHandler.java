@@ -2,6 +2,8 @@ package com.thaloria.event;
 
 import com.thaloria.block.entity.AtmosphereFilterBlockEntity;
 import com.thaloria.client.render.BreachOutlineRenderer;
+import com.thaloria.dome.DomeZone;
+import com.thaloria.dome.DomeZoneSavedData;
 import com.thaloria.registry.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -11,13 +13,16 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import com.thaloria.ThaloriaMod;
 
+@Mod.EventBusSubscriber(modid = ThaloriaMod.MOD_ID)
 public class DomeRepairHandler {
 
     private static final double MAX_DISTANCE = 6.0;
 
     @SubscribeEvent
-    public void onRightClick(PlayerInteractEvent.RightClickItem event) {
+    public static void onRightClick(PlayerInteractEvent.RightClickItem event) {
         Player player = event.getEntity();
         if (!(player.level() instanceof ServerLevel level)) return;
         ItemStack stack = event.getItemStack();
@@ -30,9 +35,13 @@ public class DomeRepairHandler {
         BlockPos bestBreach = null;
         double bestScore = 0;
 
-        // Ищем брешь, на которую смотрит игрок
+        // Ищем брешь на которую смотрит игрок
         for (BlockPos breach : BreachOutlineRenderer.BREACHES) {
-            Vec3 center = new Vec3(breach.getX() + 0.5, breach.getY() + 0.5, breach.getZ() + 0.5);
+            Vec3 center = new Vec3(
+                    breach.getX() + 0.5,
+                    breach.getY() + 0.5,
+                    breach.getZ() + 0.5
+            );
             double distance = center.distanceTo(eye);
             if (distance > MAX_DISTANCE) continue;
 
@@ -47,24 +56,38 @@ public class DomeRepairHandler {
 
         if (bestBreach == null) return;
 
-        // Ставим блок стекла
+        // Ставим блок купола
         level.setBlock(bestBreach, ModBlocks.DOME_GLASS.get().defaultBlockState(), 3);
         stack.shrink(1);
         BreachOutlineRenderer.BREACHES.remove(bestBreach);
 
-        // Теперь уведомляем ближайшие фильтры, что дыра закрыта
-        int searchRadius = 10;
-        for (int x = -searchRadius; x <= searchRadius; x++) {
-            for (int y = -searchRadius; y <= searchRadius; y++) {
-                for (int z = -searchRadius; z <= searchRadius; z++) {
-                    BlockPos pos = bestBreach.offset(x, y, z);
-                    BlockEntity be = level.getBlockEntity(pos);
-                    if (be instanceof AtmosphereFilterBlockEntity filter) {
-                        filter.markDirty(); // Этот метод мы добавим в сущность фильтра
-                    }
+        // Убираем брешь из всех зон которые её содержат
+        DomeZoneSavedData data = DomeZoneSavedData.get(level);
+        for (DomeZone zone : data.getAllZones()) {
+            if (zone.breaches.remove(bestBreach)) {
+                // Брешь была в этой зоне — помечаем как изменённую
+                data.setDirty();
+
+                // Если брешей больше нет — запускаем пересканирование
+                // чтобы убедиться что купол герметичен
+                if (zone.breaches.isEmpty()) {
+                    triggerRescan(level, zone, data);
                 }
             }
         }
+
         event.setCanceled(true);
+    }
+
+    // Перезапускаем сканирование для зоны через ближайший фильтр
+    private static void triggerRescan(ServerLevel level, DomeZone zone,
+                                      DomeZoneSavedData data) {
+        for (BlockPos filterPos : zone.filters) {
+            BlockEntity be = level.getBlockEntity(filterPos);
+            if (be instanceof AtmosphereFilterBlockEntity filter) {
+                filter.startScan(level);
+                return;
+            }
+        }
     }
 }

@@ -31,13 +31,28 @@ public class AtmosphereFilterBlock extends BaseEntityBlock {
 
     @Nullable
     @Override
-    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
-        return createTickerHelper(type, ModBlockEntities.ATMOSPHERE_FILTER.get(), (lvl, pos, st, be) -> be.tick());
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state,
+                                                                  BlockEntityType<T> type) {
+        return createTickerHelper(type, ModBlockEntities.ATMOSPHERE_FILTER.get(),
+                (lvl, pos, st, be) -> be.tick());
     }
 
-    // Вспомогательный метод для регистрации тикера
+    // Вызываем onRemoved когда блок ломают — чтобы убрать фильтр из зоны
+    @Override
+    public void onRemove(BlockState state, Level level, BlockPos pos,
+                         BlockState newState, boolean isMoving) {
+        if (!state.is(newState.getBlock())) {
+            if (level.getBlockEntity(pos) instanceof AtmosphereFilterBlockEntity filter) {
+                filter.onRemoved();
+            }
+        }
+        super.onRemove(state, level, pos, newState, isMoving);
+    }
+
     @Nullable
-    protected static <E extends BlockEntity, A extends BlockEntity> BlockEntityTicker<A> createTickerHelper(BlockEntityType<A> type, BlockEntityType<E> targetType, BlockEntityTicker<? super E> ticker) {
+    protected static <E extends BlockEntity, A extends BlockEntity> BlockEntityTicker<A> createTickerHelper(
+            BlockEntityType<A> type, BlockEntityType<E> targetType,
+            BlockEntityTicker<? super E> ticker) {
         return targetType == type ? (BlockEntityTicker<A>) ticker : null;
     }
 }
