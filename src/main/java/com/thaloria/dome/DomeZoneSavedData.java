@@ -1,23 +1,21 @@
 package com.thaloria.dome;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 public class DomeZoneSavedData extends SavedData {
 
     private static final String DATA_NAME = "thaloria_dome_zones";
-
-    // Все зоны на уровне, по UUID
     private final Map<UUID, DomeZone> zones = new HashMap<>();
 
     public static DomeZoneSavedData get(ServerLevel level) {
@@ -46,43 +44,42 @@ public class DomeZoneSavedData extends SavedData {
         return zones.values();
     }
 
-    // Добавь новый метод для безопасного удаления во время итерации
-    public void removeZoneIf(java.util.function.Predicate<DomeZone> condition) {
-        zones.values().removeIf(condition);
+    public DomeZone getZoneByFilter(BlockPos filterPos) {
+        for (DomeZone zone : zones.values()) {
+            if (zone.filters.contains(filterPos)) return zone;
+        }
+        return null;
+    }
+
+    public DomeZone getZoneContaining(BlockPos pos) {
+        for (DomeZone zone : zones.values()) {
+            if (zone.isScanning) continue;
+            if (isInsideShell(zone, pos)) return zone;
+        }
+        return null;
+    }
+
+    // ИСПРАВЛЕНИЕ: при пересканировании полностью сбрасываем
+    // оболочку и бреши зоны и заполняем заново
+    public void resetZoneShell(UUID zoneId, java.util.Set<BlockPos> newShell,
+                               java.util.Set<BlockPos> newBreaches, float newVolume) {
+        DomeZone zone = zones.get(zoneId);
+        if (zone == null) return;
+        zone.shell.clear();
+        zone.breaches.clear();
+        zone.shell.addAll(newShell);
+        zone.breaches.addAll(newBreaches);
+        zone.volume = newVolume;
         setDirty();
     }
 
-    // Найти зону по позиции фильтра
-    public DomeZone getZoneByFilter(net.minecraft.core.BlockPos filterPos) {
-        for (DomeZone zone : zones.values()) {
-            if (zone.filters.contains(filterPos)) {
-                return zone;
-            }
-        }
-        return null;
-    }
-
-    // Найти зону в которой находится позиция игрока
-    // Проверяем просто — если позиция внутри AABB оболочки зоны
-    public DomeZone getZoneContaining(net.minecraft.core.BlockPos pos) {
-        for (DomeZone zone : zones.values()) {
-            if (zone.isScanning) continue;
-            if (isInsideShell(zone, pos)) {
-                return zone;
-            }
-        }
-        return null;
-    }
-
-    // Грубая проверка — позиция внутри выпуклой оболочки зоны
-    // Используем AABB (bounding box) всех блоков оболочки
-    private boolean isInsideShell(DomeZone zone, net.minecraft.core.BlockPos pos) {
+    private boolean isInsideShell(DomeZone zone, BlockPos pos) {
         if (zone.shell.isEmpty()) return false;
 
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
         int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
 
-        for (net.minecraft.core.BlockPos shell : zone.shell) {
+        for (BlockPos shell : zone.shell) {
             minX = Math.min(minX, shell.getX());
             minY = Math.min(minY, shell.getY());
             minZ = Math.min(minZ, shell.getZ());
@@ -94,6 +91,11 @@ public class DomeZoneSavedData extends SavedData {
         return pos.getX() >= minX && pos.getX() <= maxX
                 && pos.getY() >= minY && pos.getY() <= maxY
                 && pos.getZ() >= minZ && pos.getZ() <= maxZ;
+    }
+
+    public void removeZoneIf(Predicate<DomeZone> condition) {
+        zones.values().removeIf(condition);
+        setDirty();
     }
 
     @Override

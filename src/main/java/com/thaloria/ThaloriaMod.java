@@ -32,6 +32,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import com.thaloria.event.DomemkrEvent;
 import com.thaloria.event.PlayerSpawnHandler;
 import com.thaloria.world.biome.ModBiomes;
+import com.thaloria.network.ModNetwork;
 
 import org.slf4j.Logger;
 
@@ -59,6 +60,7 @@ public class ThaloriaMod {
         ModBlocks.register(modEventBus);
         ModBlockEntities.register(modEventBus);
         ModMenus.register(modEventBus);
+        ModNetwork.register();
 
         ModBiomes.BIOMES.register(modEventBus);
 

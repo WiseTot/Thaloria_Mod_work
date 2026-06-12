@@ -1,8 +1,17 @@
 package com.thaloria.block;
 
 import com.thaloria.block.entity.AtmosphereFilterBlockEntity;
+import com.thaloria.dome.DomeZone;
+import com.thaloria.dome.DomeZoneSavedData;
+import com.thaloria.network.ModNetwork;
+import com.thaloria.network.OpenFilterScreenPacket;
 import com.thaloria.registry.ModBlockEntities;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.RenderShape;
@@ -10,6 +19,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraftforge.network.PacketDistributor;
 import org.jetbrains.annotations.Nullable;
 
 public class AtmosphereFilterBlock extends BaseEntityBlock {
@@ -21,6 +32,37 @@ public class AtmosphereFilterBlock extends BaseEntityBlock {
     @Override
     public RenderShape getRenderShape(BlockState state) {
         return RenderShape.MODEL;
+    }
+
+    @Override
+    public InteractionResult use(BlockState state, Level level, BlockPos pos,
+                                 Player player, InteractionHand hand,
+                                 BlockHitResult hit) {
+        if (level.isClientSide) return InteractionResult.SUCCESS;
+        if (!(level instanceof ServerLevel serverLevel)) return InteractionResult.PASS;
+        if (!(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
+
+        if (level.getBlockEntity(pos) instanceof AtmosphereFilterBlockEntity filter) {
+            // Собираем данные зоны для UI
+            DomeZone zone = filter.getZone(serverLevel);
+            int shellCount = zone != null ? zone.shell.size() : 0;
+            int breachCount = zone != null ? zone.breaches.size() : 0;
+            float pressure = zone != null ? zone.pressure : 0f;
+            float pressureDelta = zone != null ? zone.calculatePressureDelta() : 0f;
+            int filterCount = zone != null ? zone.filters.size() : 0;
+
+            // Отправляем пакет клиенту чтобы открыть экран
+            ModNetwork.CHANNEL.send(
+                    PacketDistributor.PLAYER.with(() -> serverPlayer),
+                    new OpenFilterScreenPacket(
+                            pos, filter.scanRadius, filter.isPowered,
+                            filter.isScanning, filter.scanProgress,
+                            shellCount, breachCount, pressure, pressureDelta, filterCount
+                    )
+            );
+        }
+
+        return InteractionResult.CONSUME;
     }
 
     @Nullable
@@ -37,7 +79,6 @@ public class AtmosphereFilterBlock extends BaseEntityBlock {
                 (lvl, pos, st, be) -> be.tick());
     }
 
-    // Вызываем onRemoved когда блок ломают — чтобы убрать фильтр из зоны
     @Override
     public void onRemove(BlockState state, Level level, BlockPos pos,
                          BlockState newState, boolean isMoving) {

@@ -21,10 +21,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
     public int scanProgress = 0;
     public boolean isScanning = false;
 
-    // ИСПРАВЛЕНИЕ: не сохраняем isPowered в NBT —
-    // каждый раз при загрузке проверяем заново
-    private boolean scanScheduled = false;
-
     public AtmosphereFilterBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.ATMOSPHERE_FILTER.get(), pos, state);
     }
@@ -37,24 +33,26 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         boolean wasPowered = isPowered;
         isPowered = checkPower(serverLevel);
 
-        // Питание появилось — запускаем сканирование
         if (isPowered && !wasPowered) {
             startScan(serverLevel);
         }
 
-        // Питание пропало — отключаем зону
         if (!isPowered && wasPowered) {
             removeSelfFromZone(serverLevel);
         }
 
-        // Есть питание, есть зона — потребляем энергию
         if (isPowered && zoneId != null && !isScanning) {
-            consumeGeneratorEnergy(serverLevel);
+            // ИСПРАВЛЕНИЕ: проверяем что зона ещё существует
+            // Если нет (была удалена) — сбрасываем zoneId и сканируем заново
+            DomeZoneSavedData data = DomeZoneSavedData.get(serverLevel);
+            if (data.getZone(zoneId) == null) {
+                zoneId = null;
+                setChanged();
+            } else {
+                consumeGeneratorEnergy(serverLevel);
+            }
         }
 
-        // ИСПРАВЛЕНИЕ: если зона не создана но питание есть
-        // и сканирование не идёт — перезапускаем сканирование
-        // Это покрывает случай перезагрузки мира
         if (isPowered && zoneId == null && !isScanning) {
             startScan(serverLevel);
         }
@@ -91,7 +89,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
     }
 
     public void startScan(ServerLevel level) {
-        if (isScanning) return; // Не запускаем если уже идёт
+        if (isScanning) return;
         isScanning = true;
         scanProgress = 0;
 
@@ -103,7 +101,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
         Thread scanThread = new Thread(() -> {
             try {
-                // Прогресс для UI
                 for (int i = 0; i <= 90; i += 10) {
                     scanProgress = i;
                     Thread.sleep(200);
@@ -114,30 +111,61 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                 levelRef.getServer().execute(() -> {
                     DomeZoneSavedData data = DomeZoneSavedData.get(levelRef);
 
-                    DomeZone zone = new DomeZone(UUID.randomUUID());
-                    zone.filters.add(originPos);
-                    zone.shell.addAll(result.shell);
-                    zone.breaches.addAll(result.breaches);
-                    zone.volume = result.volume;
-                    zone.scanRadius = radius;
-                    zone.isScanning = false;
+                    // Ищем зону которая содержит позицию фильтра
+                    DomeZone existingZone = data.getZoneContaining(originPos);
 
-                    data.addZone(zone);
-                    zoneId = zone.id;
+                    if (existingZone != null && !existingZone.filters.isEmpty()) {
+                        // Присоединяемся к существующей живой зоне
+                        existingZone.filters.add(originPos);
 
-                    isScanning = false;
-                    scanProgress = 100;
-                    setChanged();
+                        // ИСПРАВЛЕНИЕ: при join пересчитываем только volume,
+                        // оболочку и бреши НЕ трогаем — они уже актуальны
+                        existingZone.volume = (existingZone.volume + result.volume) / 2f;
 
-                    // Отладочное сообщение в лог сервера
-                    levelRef.getServer().sendSystemMessage(
-                            net.minecraft.network.chat.Component.literal(
-                                    "[Thaloria] Scan complete! Shell=" + zone.shell.size() +
-                                            " Breaches=" + zone.breaches.size() +
-                                            " Volume=" + (int)zone.volume +
-                                            " Pressure delta=" + zone.calculatePressureDelta()
-                            )
-                    );
+                        zoneId = existingZone.id;
+                        data.setDirty();
+
+                        isScanning = false;
+                        scanProgress = 100;
+                        setChanged();
+
+                        levelRef.getServer().sendSystemMessage(
+                                net.minecraft.network.chat.Component.literal(
+                                        "[Thaloria] Filter joined zone! Filters=" +
+                                                existingZone.filters.size() +
+                                                " Shell=" + existingZone.shell.size() +
+                                                " Breaches=" + existingZone.breaches.size() +
+                                                " Volume=" + (int)existingZone.volume +
+                                                " Pressure delta=" + existingZone.calculatePressureDelta()
+                                )
+                        );
+
+                    } else {
+                        // Создаём новую зону — полный сброс
+                        DomeZone zone = new DomeZone(UUID.randomUUID());
+                        zone.filters.add(originPos);
+                        zone.shell.addAll(result.shell);
+                        zone.breaches.addAll(result.breaches);
+                        zone.volume = result.volume;
+                        zone.scanRadius = radius;
+                        zone.isScanning = false;
+
+                        data.addZone(zone);
+                        zoneId = zone.id;
+
+                        isScanning = false;
+                        scanProgress = 100;
+                        setChanged();
+
+                        levelRef.getServer().sendSystemMessage(
+                                net.minecraft.network.chat.Component.literal(
+                                        "[Thaloria] New zone created! Shell=" + zone.shell.size() +
+                                                " Breaches=" + zone.breaches.size() +
+                                                " Volume=" + (int)zone.volume +
+                                                " Pressure delta=" + zone.calculatePressureDelta()
+                                )
+                        );
+                    }
                 });
 
             } catch (Exception e) {
@@ -160,13 +188,16 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         if (zone != null) {
             zone.filters.remove(this.getBlockPos());
             if (zone.filters.isEmpty()) {
+                // ИСПРАВЛЕНИЕ: удаляем зону полностью включая все данные
                 data.removeZone(zoneId);
             } else {
                 data.setDirty();
             }
         }
 
+        // ИСПРАВЛЕНИЕ: всегда сбрасываем zoneId и сохраняем
         zoneId = null;
+        setChanged();
     }
 
     public void onRemoved() {
@@ -186,7 +217,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
     protected void saveAdditional(CompoundTag tag) {
         super.saveAdditional(tag);
         tag.putInt("scanRadius", scanRadius);
-        // НЕ сохраняем isPowered — определяем при каждом тике
         if (zoneId != null) tag.putUUID("zoneId", zoneId);
     }
 
@@ -195,6 +225,5 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         super.load(tag);
         scanRadius = tag.getInt("scanRadius");
         if (tag.hasUUID("zoneId")) zoneId = tag.getUUID("zoneId");
-        // isPowered = false по умолчанию, определится в первом тике
     }
 }
