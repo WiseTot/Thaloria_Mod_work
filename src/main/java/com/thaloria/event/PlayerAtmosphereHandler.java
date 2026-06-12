@@ -53,7 +53,7 @@ public class PlayerAtmosphereHandler {
     public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         if (!(event.player instanceof ServerPlayer player)) return;
-        if (player.isCreative() || player.isSpectator()) return;
+        if (player.isSpectator()) return;
         if (player.tickCount % 10 != 0) return;
 
         ServerLevel level = (ServerLevel) player.level();

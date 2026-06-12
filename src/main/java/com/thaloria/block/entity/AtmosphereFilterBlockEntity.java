@@ -14,16 +14,16 @@ import java.util.UUID;
 
 public class AtmosphereFilterBlockEntity extends BlockEntity {
 
-    // Радиус сканирования — игрок выставляет в UI (1-450)
     public int scanRadius = 30;
-
-    // UUID зоны к которой привязан этот фильтр
     private UUID zoneId = null;
 
-    // Статус для UI
     public boolean isPowered = false;
     public int scanProgress = 0;
     public boolean isScanning = false;
+
+    // ИСПРАВЛЕНИЕ: не сохраняем isPowered в NBT —
+    // каждый раз при загрузке проверяем заново
+    private boolean scanScheduled = false;
 
     public AtmosphereFilterBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.ATMOSPHERE_FILTER.get(), pos, state);
@@ -32,31 +32,34 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
     public void tick() {
         if (level == null || level.isClientSide) return;
         if (!(level instanceof ServerLevel serverLevel)) return;
-
-        // Раз в секунду проверяем питание от генератора
         if (level.getGameTime() % 20 != 0) return;
 
-        boolean wasPoewered = isPowered;
+        boolean wasPowered = isPowered;
         isPowered = checkPower(serverLevel);
 
         // Питание появилось — запускаем сканирование
-        if (isPowered && !wasPoewered) {
+        if (isPowered && !wasPowered) {
             startScan(serverLevel);
         }
 
         // Питание пропало — отключаем зону
-        if (!isPowered && wasPoewered) {
+        if (!isPowered && wasPowered) {
             removeSelfFromZone(serverLevel);
         }
 
-        // Если питание есть и зона есть — потребляем энергию
-        if (isPowered && zoneId != null) {
+        // Есть питание, есть зона — потребляем энергию
+        if (isPowered && zoneId != null && !isScanning) {
             consumeGeneratorEnergy(serverLevel);
+        }
+
+        // ИСПРАВЛЕНИЕ: если зона не создана но питание есть
+        // и сканирование не идёт — перезапускаем сканирование
+        // Это покрывает случай перезагрузки мира
+        if (isPowered && zoneId == null && !isScanning) {
+            startScan(serverLevel);
         }
     }
 
-    // Проверяем есть ли рядом генератор с энергией
-    // Ищем в радиусе 5 блоков
     private boolean checkPower(ServerLevel level) {
         for (int x = -5; x <= 5; x++) {
             for (int y = -5; y <= 5; y++) {
@@ -71,7 +74,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         return false;
     }
 
-    // Потребляем энергию генератора раз в секунду
     private void consumeGeneratorEnergy(ServerLevel level) {
         for (int x = -5; x <= 5; x++) {
             for (int y = -5; y <= 5; y++) {
@@ -88,48 +90,59 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         }
     }
 
-    // Запускаем сканирование асинхронно
     public void startScan(ServerLevel level) {
+        if (isScanning) return; // Не запускаем если уже идёт
         isScanning = true;
         scanProgress = 0;
 
-        // Убираем себя из старой зоны если была
         removeSelfFromZone(level);
 
-        // Запускаем сканирование в отдельном потоке
+        final ServerLevel levelRef = level;
+        final BlockPos originPos = this.getBlockPos();
+        final int radius = this.scanRadius;
+
         Thread scanThread = new Thread(() -> {
             try {
-                // Имитируем прогресс для UI
-                for (int i = 0; i <= 100; i += 10) {
+                // Прогресс для UI
+                for (int i = 0; i <= 90; i += 10) {
                     scanProgress = i;
-                    Thread.sleep(200); // 2 секунды общего сканирования
+                    Thread.sleep(200);
                 }
 
-                DomeScanTask.ScanResult result = DomeScanTask.scan(level, this.getBlockPos(), scanRadius);
+                DomeScanTask.ScanResult result = DomeScanTask.scan(levelRef, originPos, radius);
 
-                // Возвращаемся в основной поток для работы с миром
-                level.getServer().execute(() -> {
-                    DomeZoneSavedData data = DomeZoneSavedData.get(level);
+                levelRef.getServer().execute(() -> {
+                    DomeZoneSavedData data = DomeZoneSavedData.get(levelRef);
 
-                    // Создаём новую зону
                     DomeZone zone = new DomeZone(UUID.randomUUID());
-                    zone.filters.add(this.getBlockPos());
+                    zone.filters.add(originPos);
                     zone.shell.addAll(result.shell);
                     zone.breaches.addAll(result.breaches);
                     zone.volume = result.volume;
-                    zone.scanRadius = scanRadius;
+                    zone.scanRadius = radius;
                     zone.isScanning = false;
 
                     data.addZone(zone);
-                    this.zoneId = zone.id;
+                    zoneId = zone.id;
 
                     isScanning = false;
                     scanProgress = 100;
                     setChanged();
+
+                    // Отладочное сообщение в лог сервера
+                    levelRef.getServer().sendSystemMessage(
+                            net.minecraft.network.chat.Component.literal(
+                                    "[Thaloria] Scan complete! Shell=" + zone.shell.size() +
+                                            " Breaches=" + zone.breaches.size() +
+                                            " Volume=" + (int)zone.volume +
+                                            " Pressure delta=" + zone.calculatePressureDelta()
+                            )
+                    );
                 });
 
-            } catch (InterruptedException e) {
+            } catch (Exception e) {
                 isScanning = false;
+                e.printStackTrace();
             }
         });
 
@@ -138,7 +151,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         scanThread.start();
     }
 
-    // Убираем этот фильтр из зоны
     public void removeSelfFromZone(ServerLevel level) {
         if (zoneId == null) return;
 
@@ -147,7 +159,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
         if (zone != null) {
             zone.filters.remove(this.getBlockPos());
-            // Если фильтров не осталось — удаляем зону
             if (zone.filters.isEmpty()) {
                 data.removeZone(zoneId);
             } else {
@@ -158,7 +169,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         zoneId = null;
     }
 
-    // Вызывается когда блок сломан
     public void onRemoved() {
         if (level instanceof ServerLevel serverLevel) {
             removeSelfFromZone(serverLevel);
@@ -176,7 +186,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
     protected void saveAdditional(CompoundTag tag) {
         super.saveAdditional(tag);
         tag.putInt("scanRadius", scanRadius);
-        tag.putBoolean("isPowered", isPowered);
+        // НЕ сохраняем isPowered — определяем при каждом тике
         if (zoneId != null) tag.putUUID("zoneId", zoneId);
     }
 
@@ -184,7 +194,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
     public void load(CompoundTag tag) {
         super.load(tag);
         scanRadius = tag.getInt("scanRadius");
-        isPowered = tag.getBoolean("isPowered");
         if (tag.hasUUID("zoneId")) zoneId = tag.getUUID("zoneId");
+        // isPowered = false по умолчанию, определится в первом тике
     }
 }
