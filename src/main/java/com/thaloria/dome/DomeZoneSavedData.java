@@ -46,6 +46,12 @@ public class DomeZoneSavedData extends SavedData {
         return zones.values();
     }
 
+    // Добавь новый метод для безопасного удаления во время итерации
+    public void removeZoneIf(java.util.function.Predicate<DomeZone> condition) {
+        zones.values().removeIf(condition);
+        setDirty();
+    }
+
     // Найти зону по позиции фильтра
     public DomeZone getZoneByFilter(net.minecraft.core.BlockPos filterPos) {
         for (DomeZone zone : zones.values()) {

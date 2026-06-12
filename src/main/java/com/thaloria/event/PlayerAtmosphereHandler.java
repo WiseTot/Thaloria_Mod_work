@@ -29,9 +29,30 @@ public class PlayerAtmosphereHandler {
 
             DomeZoneSavedData data = DomeZoneSavedData.get(level);
 
+            // Удаляем мёртвые зоны (без фильтров и с нулевым давлением)
+            data.removeZoneIf(zone -> {
+                if (zone.filters.isEmpty() && zone.pressure <= 0f) {
+                    zone.playersInside.forEach(id -> {
+                        ServerPlayer p = level.getServer().getPlayerList().getPlayer(id);
+                        if (p != null) AtmosphereManager.setPressure(p, 0f);
+                    });
+                    return true;
+                }
+                return false;
+            });
+
+            // Обычный тик для живых зон
             for (DomeZone zone : data.getAllZones()) {
                 if (zone.isScanning) continue;
 
+                // Фильтров нет — давление быстро падает
+                if (zone.filters.isEmpty()) {
+                    zone.pressure = Math.max(0f, zone.pressure - 10f);
+                    data.setDirty();
+                    continue;
+                }
+
+                // Обычный пересчёт
                 float delta = zone.calculatePressureDelta();
                 zone.pressure = Math.max(0f, Math.min(100f, zone.pressure + delta));
 
