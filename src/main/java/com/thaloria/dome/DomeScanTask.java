@@ -65,51 +65,39 @@ public class DomeScanTask {
         return true;
     }
 
-    private static BlockPos findDomeBlockOrtho(ServerLevel level, BlockPos center) {
+    // Единый метод — проверяем блок и всех 26 соседей в кубе 3×3×3
+    // Но только те что ДАЛЬШЕ от фильтра чем текущая точка
+    // Это не даёт прыгать через реальные дыры
+    private static BlockPos findDomeBlockNearby(ServerLevel level, BlockPos center,
+                                                BlockPos origin) {
         if (isDomeBlock(level.getBlockState(center))) return center;
 
-        BlockPos[] neighbors = {
-                center.above(), center.below(),
-                center.north(), center.south(),
-                center.east(),  center.west()
-        };
-        for (BlockPos n : neighbors) {
-            if (isDomeBlock(level.getBlockState(n))) return n;
-        }
-        return null;
-    }
-
-
-    // Для вертикальных лучей (вверх) — все 26 соседей в кубе 3×3×3
-    // Нужно для ступенчатой верхушки сферы
-    private static BlockPos findDomeBlockFull(ServerLevel level, BlockPos center) {
-        if (isDomeBlock(level.getBlockState(center))) return center;
+        double originDist = Math.sqrt(
+                Math.pow(center.getX() - origin.getX(), 2) +
+                        Math.pow(center.getY() - origin.getY(), 2) +
+                        Math.pow(center.getZ() - origin.getZ(), 2)
+        );
 
         for (int dx = -1; dx <= 1; dx++) {
             for (int dy = -1; dy <= 1; dy++) {
                 for (int dz = -1; dz <= 1; dz++) {
                     if (dx == 0 && dy == 0 && dz == 0) continue;
                     BlockPos n = center.offset(dx, dy, dz);
-                    if (isDomeBlock(level.getBlockState(n))) return n;
+
+                    // Сосед должен быть НЕ ближе к фильтру чем текущая точка
+                    // Это предотвращает "прыжок назад" через дыру
+                    double neighborDist = Math.sqrt(
+                            Math.pow(n.getX() - origin.getX(), 2) +
+                                    Math.pow(n.getY() - origin.getY(), 2) +
+                                    Math.pow(n.getZ() - origin.getZ(), 2)
+                    );
+
+                    if (neighborDist >= originDist - 1.5
+                            && isDomeBlock(level.getBlockState(n))) {
+                        return n;
+                    }
                 }
             }
-        }
-        return null;
-    }
-
-
-    // Проверяем блок и 6 ортогональных соседей
-    private static BlockPos findDomeBlockNear(ServerLevel level, BlockPos center) {
-        if (isDomeBlock(level.getBlockState(center))) return center;
-
-        BlockPos[] neighbors = {
-                center.above(), center.below(),
-                center.north(), center.south(),
-                center.east(),  center.west()
-        };
-
-        for (BlockPos neighbor : neighbors) {
-            if (isDomeBlock(level.getBlockState(neighbor))) return neighbor;
         }
         return null;
     }
@@ -161,12 +149,11 @@ public class DomeScanTask {
         double y = origin.getY() + 0.5;
         double z = origin.getZ() + 0.5;
 
-        double step = 0.3;
+        // Уменьшаем шаг до 0.2 — точнее для диагональных поверхностей
+        double step = 0.2;
         int steps = (int)(maxDistance / step);
         BlockPos lastPos = null;
-
-        // Определяем тип луча — вертикальный или горизонтальный
-        boolean isVertical = Math.abs(direction.y) > 0.5;
+        boolean goingDown = direction.y < -0.3;
 
         for (int i = 1; i <= steps; i++) {
             x += direction.x * step;
@@ -178,20 +165,19 @@ public class DomeScanTask {
             if (pos.equals(lastPos)) continue;
             lastPos = pos;
 
-            // Вертикальные лучи — полная проверка соседей
-            // Горизонтальные — только ортогональные (чтобы не прыгать через дыры)
-            BlockPos domeBlock = isVertical
-                    ? findDomeBlockFull(level, pos)
-                    : findDomeBlockOrtho(level, pos);
-
+            // Проверяем блок и соседей с учётом направления от фильтра
+            BlockPos domeBlock = findDomeBlockNearby(level, pos, origin);
             if (domeBlock != null) {
                 return new RayResult(true, false, domeBlock, distance);
             }
 
             // Пол только для лучей летящих вниз
-            if (direction.y < -0.3) {
-                if (isSolidFloor(level, pos)) {
-                    return new RayResult(false, true, pos, distance);
+            if (goingDown) {
+                for (int up = 0; up <= 3; up++) {
+                    BlockPos checkPos = pos.above(up);
+                    if (isSolidFloor(level, checkPos)) {
+                        return new RayResult(false, true, checkPos, distance);
+                    }
                 }
             }
         }
