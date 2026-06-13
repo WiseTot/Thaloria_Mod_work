@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "thaloria:dust_block",
+    "thaloria:dust_layer",
+    "thaloria:dome_glass"
+  ]
+}
