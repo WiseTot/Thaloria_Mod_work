@@ -93,6 +93,15 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         isScanning = true;
         scanProgress = 0;
 
+        // ИСПРАВЛЕНИЕ: сохраняем текущее давление перед пересканированием
+        float savedPressure = 0f;
+        DomeZoneSavedData data = DomeZoneSavedData.get(level);
+        if (zoneId != null) {
+            DomeZone existing = data.getZone(zoneId);
+            if (existing != null) savedPressure = existing.pressure;
+        }
+        final float pressureToRestore = savedPressure;
+
         removeSelfFromZone(level);
 
         final ServerLevel levelRef = level;
@@ -109,39 +118,24 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                 DomeScanTask.ScanResult result = DomeScanTask.scan(levelRef, originPos, radius);
 
                 levelRef.getServer().execute(() -> {
-                    DomeZoneSavedData data = DomeZoneSavedData.get(levelRef);
-
-                    // Ищем зону которая содержит позицию фильтра
-                    DomeZone existingZone = data.getZoneContaining(originPos);
+                    DomeZoneSavedData dataRef = DomeZoneSavedData.get(levelRef);
+                    DomeZone existingZone = dataRef.getZoneContaining(originPos);
 
                     if (existingZone != null && !existingZone.filters.isEmpty()) {
-                        // Присоединяемся к существующей живой зоне
                         existingZone.filters.add(originPos);
-
-                        // ИСПРАВЛЕНИЕ: при join пересчитываем только volume,
-                        // оболочку и бреши НЕ трогаем — они уже актуальны
                         existingZone.volume = (existingZone.volume + result.volume) / 2f;
-
                         zoneId = existingZone.id;
-                        data.setDirty();
-
-                        isScanning = false;
-                        scanProgress = 100;
-                        setChanged();
+                        dataRef.setDirty();
 
                         levelRef.getServer().sendSystemMessage(
                                 net.minecraft.network.chat.Component.literal(
                                         "[Thaloria] Filter joined zone! Filters=" +
                                                 existingZone.filters.size() +
-                                                " Shell=" + existingZone.shell.size() +
                                                 " Breaches=" + existingZone.breaches.size() +
-                                                " Volume=" + (int)existingZone.volume +
-                                                " Pressure delta=" + existingZone.calculatePressureDelta()
+                                                " Pressure=" + (int)existingZone.pressure
                                 )
                         );
-
                     } else {
-                        // Создаём новую зону — полный сброс
                         DomeZone zone = new DomeZone(UUID.randomUUID());
                         zone.filters.add(originPos);
                         zone.shell.addAll(result.shell);
@@ -150,22 +144,24 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         zone.scanRadius = radius;
                         zone.isScanning = false;
 
-                        data.addZone(zone);
-                        zoneId = zone.id;
+                        // ИСПРАВЛЕНИЕ: восстанавливаем давление
+                        zone.pressure = pressureToRestore;
 
-                        isScanning = false;
-                        scanProgress = 100;
-                        setChanged();
+                        dataRef.addZone(zone);
+                        zoneId = zone.id;
 
                         levelRef.getServer().sendSystemMessage(
                                 net.minecraft.network.chat.Component.literal(
-                                        "[Thaloria] New zone created! Shell=" + zone.shell.size() +
+                                        "[Thaloria] New zone! Shell=" + zone.shell.size() +
                                                 " Breaches=" + zone.breaches.size() +
-                                                " Volume=" + (int)zone.volume +
-                                                " Pressure delta=" + zone.calculatePressureDelta()
+                                                " Pressure restored=" + (int)pressureToRestore
                                 )
                         );
                     }
+
+                    isScanning = false;
+                    scanProgress = 100;
+                    setChanged();
                 });
 
             } catch (Exception e) {

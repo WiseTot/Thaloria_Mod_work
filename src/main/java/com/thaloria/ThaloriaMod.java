@@ -43,15 +43,6 @@ public class ThaloriaMod {
     public static final String MOD_ID = "thaloria";
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    public static final String PROTOCOL_VERSION = "1";
-    public static final net.minecraftforge.network.simple.SimpleChannel PACKET_HANDLER =
-            net.minecraftforge.network.NetworkRegistry.newSimpleChannel(
-                    new net.minecraft.resources.ResourceLocation(MODID, "main"),
-                    () -> PROTOCOL_VERSION,
-                    PROTOCOL_VERSION::equals,
-                    PROTOCOL_VERSION::equals
-            );
-
     public ThaloriaMod() {
 
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();

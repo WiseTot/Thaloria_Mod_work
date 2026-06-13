@@ -1,8 +1,6 @@
 package com.thaloria.dome;
 
-import com.thaloria.registry.ModBlocks;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.TagKey;
@@ -27,8 +25,6 @@ public class DomeScanTask {
         return state.is(DOME_BLOCKS_TAG);
     }
 
-    // Проверяем что блок является твёрдым полом
-    // В 1.20.1 используем isCollisionShapeFullBlock
     private static boolean isFullSolidBlock(ServerLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         if (state.isAir()) return false;
@@ -36,16 +32,47 @@ public class DomeScanTask {
         return state.isCollisionShapeFullBlock(level, pos);
     }
 
-    private static boolean isSolidFloor(ServerLevel level, BlockPos pos) {
-        // Верхний блок должен быть полным solid
-        if (!isFullSolidBlock(level, pos)) return false;
+    private static final TagKey<Block> FLOOR_BLOCKS_TAG = TagKey.create(
+            ForgeRegistries.BLOCKS.getRegistryKey(),
+            ResourceLocation.fromNamespaceAndPath("thaloria", "dome_floor_blocks")
+    );
 
-        // Проверяем 3 блока ниже — если все solid то это натуральный грунт
+    private static boolean isSolidFloor(ServerLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+
+        // Блок из тега пола — всегда валиден (пыль, купольное стекло и т.д.)
+        if (state.is(FLOOR_BLOCKS_TAG)) return true;
+
+        // Обычный solid блок с 3 слоями ниже — натуральный грунт
+        if (state.isAir() || state.liquid()) return false;
+        if (!state.isCollisionShapeFullBlock(level, pos)) return false;
+
         for (int i = 1; i <= 3; i++) {
             BlockPos below = pos.below(i);
-            if (!isFullSolidBlock(level, below)) return false;
+            BlockState belowState = level.getBlockState(below);
+            if (belowState.isAir() || belowState.liquid()) return false;
+            if (!belowState.isCollisionShapeFullBlock(level, below)) return false;
         }
         return true;
+    }
+
+    // Проверяем блок и только ортогональных соседей (6 направлений)
+    // НЕ диагональных — иначе луч "перепрыгивает" через дыру
+    private static BlockPos findDomeBlockNear(ServerLevel level, BlockPos center) {
+        if (isDomeBlock(level.getBlockState(center))) return center;
+
+        // Только 6 ортогональных соседей (вверх/вниз/влево/вправо/вперёд/назад)
+        // Не диагональные — они слишком далеко и дают ложные срабатывания
+        BlockPos[] neighbors = {
+                center.above(), center.below(),
+                center.north(), center.south(),
+                center.east(),  center.west()
+        };
+
+        for (BlockPos neighbor : neighbors) {
+            if (isDomeBlock(level.getBlockState(neighbor))) return neighbor;
+        }
+        return null;
     }
 
     public static ScanResult scan(ServerLevel level, BlockPos origin, int radius) {
@@ -69,13 +96,11 @@ public class DomeScanTask {
             RayResult result = castRay(level, origin, direction, radius);
 
             if (result.hitDome || result.hitFloor) {
-                if (result.hitPos != null) {
-                    shellBlocks.add(result.hitPos);
-                }
+                if (result.hitPos != null) shellBlocks.add(result.hitPos);
                 hitRays++;
                 totalDistance += result.distance;
             } else {
-                // Брешь — примерная позиция где должна быть граница
+                // Брешь — записываем примерную позицию
                 BlockPos expectedPos = BlockPos.containing(
                         origin.getX() + direction.x * radius,
                         origin.getY() + direction.y * radius,
@@ -98,8 +123,10 @@ public class DomeScanTask {
         double y = origin.getY() + 0.5;
         double z = origin.getZ() + 0.5;
 
-        double step = 0.5;
+        double step = 0.3;
         int steps = (int)(maxDistance / step);
+
+        BlockPos lastPos = null;
 
         for (int i = 1; i <= steps; i++) {
             x += direction.x * step;
@@ -108,21 +135,20 @@ public class DomeScanTask {
             float distance = (float)(i * step);
 
             BlockPos pos = BlockPos.containing(x, y, z);
-            BlockState state = level.getBlockState(pos);
 
-            // Нашли блок купола — это граница
-            if (isDomeBlock(state)) {
-                return new RayResult(true, false, pos, distance);
+            // Пропускаем если та же позиция что и предыдущий шаг
+            if (pos.equals(lastPos)) continue;
+            lastPos = pos;
+
+            // Проверяем блок и ортогональных соседей
+            BlockPos domeBlock = findDomeBlockNear(level, pos);
+            if (domeBlock != null) {
+                return new RayResult(true, false, domeBlock, distance);
             }
 
-            // Луч идёт вниз — проверяем пол
+            // Пол только для лучей идущих вниз
             if (direction.y < -0.3) {
-                if (isDomeBlock(state)) {
-                    // Пол из блоков купола — одного слоя достаточно
-                    return new RayResult(false, true, pos, distance);
-                }
                 if (isSolidFloor(level, pos)) {
-                    // Натуральный грунт — нужно 4 слоя
                     return new RayResult(false, true, pos, distance);
                 }
             }
