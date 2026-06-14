@@ -138,8 +138,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                     } else {
                         DomeZone zone = new DomeZone(UUID.randomUUID());
                         zone.filters.add(originPos);
-                        zone.shell.addAll(result.shell);
-                        zone.breaches.addAll(result.breaches);
+                        zone.originalShell.addAll(result.shell);
                         zone.volume = result.volume;
                         zone.scanRadius = radius;
                         zone.isScanning = false;
@@ -152,7 +151,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
                         levelRef.getServer().sendSystemMessage(
                                 net.minecraft.network.chat.Component.literal(
-                                        "[Thaloria] New zone! Shell=" + zone.shell.size() +
+                                        "[Thaloria] New zone! Shell=" + zone.originalShell.size() +
                                                 " Breaches=" + zone.breaches.size() +
                                                 " Pressure restored=" + (int)pressureToRestore
                                 )

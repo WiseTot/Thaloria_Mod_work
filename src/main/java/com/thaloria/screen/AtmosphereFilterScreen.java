@@ -6,6 +6,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import com.thaloria.network.UpdateBaselinePacket;
 
 public class AtmosphereFilterScreen extends Screen {
 
@@ -19,7 +20,6 @@ public class AtmosphereFilterScreen extends Screen {
     private float pressure;
     private float pressureDelta;
     private int filterCount;
-    private boolean showBreaches = false; // поле класса, не локальная переменная
 
     private RadiusSlider radiusSlider;
     private int updateTick = 0;
@@ -85,43 +85,25 @@ public class AtmosphereFilterScreen extends Screen {
                                         new FilterScanPacket(filterPos));
                             }
                         })
-                .pos(cx - 70, panelY + 152)
-                .size(60, 16)
+                .pos(cx - 55, panelY + 152)
+                .size(50, 16)
                 .build()
         );
 
-        // Кнопки брешей — только если есть бреши
-        if (breachCount > 0) {
-            // Кнопка Show Breaches ON/OFF
-            addRenderableWidget(Button.builder(
-                            Component.literal(showBreaches ? "§aBreaches: ON" : "§cBreaches: OFF"),
-                            btn -> {
-                                showBreaches = !showBreaches;
-                                btn.setMessage(Component.literal(
-                                        showBreaches ? "§aBreaches: ON" : "§cBreaches: OFF"));
-                                if (showBreaches) {
-                                    ModNetwork.CHANNEL.sendToServer(
-                                            new RequestShowBreachesPacket(filterPos));
-                                }
-                            })
-                    .pos(cx - 5, panelY + 152)
-                    .size(75, 16)
-                    .build()
-            );
-
-            // Кнопка Teleport to Breach
-            addRenderableWidget(Button.builder(
-                            Component.literal("§eTeleport"),
-                            btn -> {
+        // Кнопка Update Baseline — обновить эталон купола
+        addRenderableWidget(Button.builder(
+                        Component.literal("§eUpdate Baseline"),
+                        btn -> {
+                            if (!isScanning && isPowered) {
                                 ModNetwork.CHANNEL.sendToServer(
-                                        new TeleportToBreachPacket(filterPos));
+                                        new UpdateBaselinePacket(filterPos));
                                 onClose();
-                            })
-                    .pos(cx + 74, panelY + 152)
-                    .size(56, 16)
-                    .build()
-            );
-        }
+                            }
+                        })
+                .pos(cx - 1, panelY + 152)
+                .size(90, 16)
+                .build()
+        );
     }
 
     @Override

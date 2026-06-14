@@ -45,7 +45,7 @@ public class AtmosphereFilterBlock extends BaseEntityBlock {
         if (level.getBlockEntity(pos) instanceof AtmosphereFilterBlockEntity filter) {
             // Собираем данные зоны для UI
             DomeZone zone = filter.getZone(serverLevel);
-            int shellCount = zone != null ? zone.shell.size() : 0;
+            int shellCount = zone != null ? zone.originalShell.size() : 0;
             int breachCount = zone != null ? zone.breaches.size() : 0;
             float pressure = zone != null ? zone.pressure : 0f;
             float pressureDelta = zone != null ? zone.calculatePressureDelta() : 0f;

@@ -83,9 +83,9 @@ public class DomeZoneSavedData extends SavedData {
                                Set<BlockPos> newBreaches, float newVolume) {
         DomeZone zone = zones.get(zoneId);
         if (zone == null) return;
-        zone.shell.clear();
+        zone.originalShell.clear();
         zone.breaches.clear();
-        zone.shell.addAll(newShell);
+        zone.originalShell.addAll(newShell);
         zone.breaches.addAll(newBreaches);
         zone.volume = newVolume;
         setDirty();
@@ -113,6 +113,18 @@ public class DomeZoneSavedData extends SavedData {
             DomeZone zone = DomeZone.load(list.getCompound(i));
             data.zones.put(zone.id, zone);
         }
+        // Бреши пересчитаются когда уровень загрузится
+        // через DomeZoneSavedData.recalculateAllBreaches(level)
         return data;
+    }
+
+    // Вызывается при загрузке уровня
+    public void recalculateAllBreaches(net.minecraft.server.level.ServerLevel level) {
+        for (DomeZone zone : zones.values()) {
+            if (zone.hasBaseline) {
+                zone.recalculateBreaches(level);
+            }
+        }
+        setDirty();
     }
 }

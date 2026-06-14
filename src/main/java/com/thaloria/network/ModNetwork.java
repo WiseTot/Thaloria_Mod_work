@@ -44,22 +44,5 @@ public class ModNetwork {
                 OpenFilterScreenPacket::decode,
                 OpenFilterScreenPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-
-        CHANNEL.registerMessage(id++, ShowBreachesPacket.class,
-                ShowBreachesPacket::encode,
-                ShowBreachesPacket::decode,
-                ShowBreachesPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-
-        CHANNEL.registerMessage(id++, RequestShowBreachesPacket.class,
-                RequestShowBreachesPacket::encode,
-                RequestShowBreachesPacket::decode,
-                RequestShowBreachesPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_SERVER));
-        CHANNEL.registerMessage(id++, TeleportToBreachPacket.class,
-                TeleportToBreachPacket::encode,
-                TeleportToBreachPacket::decode,
-                TeleportToBreachPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 }
