@@ -21,6 +21,7 @@ public class ModNetwork {
     private static int id = 0;
 
     public static void register() {
+        // Клиент → Сервер
         CHANNEL.registerMessage(id++, FilterRadiusPacket.class,
                 FilterRadiusPacket::encode,
                 FilterRadiusPacket::decode,
@@ -39,10 +40,23 @@ public class ModNetwork {
                 RequestFilterDataPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
 
+        CHANNEL.registerMessage(id++, UpdateBaselinePacket.class,
+                UpdateBaselinePacket::encode,
+                UpdateBaselinePacket::decode,
+                UpdateBaselinePacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_SERVER));
+
+        // Сервер → Клиент
         CHANNEL.registerMessage(id++, OpenFilterScreenPacket.class,
                 OpenFilterScreenPacket::encode,
                 OpenFilterScreenPacket::decode,
                 OpenFilterScreenPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+
+        CHANNEL.registerMessage(id++, BreachParticlesPacket.class,
+                BreachParticlesPacket::encode,
+                BreachParticlesPacket::decode,
+                BreachParticlesPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 }

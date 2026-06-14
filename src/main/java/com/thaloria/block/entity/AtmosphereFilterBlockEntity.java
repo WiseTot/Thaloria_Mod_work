@@ -142,6 +142,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         zone.volume = result.volume;
                         zone.scanRadius = radius;
                         zone.isScanning = false;
+                        zone.hasBaseline = true;
 
                         // ИСПРАВЛЕНИЕ: восстанавливаем давление
                         zone.pressure = pressureToRestore;
