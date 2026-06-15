@@ -49,13 +49,29 @@ public class DomeBlockChangeHandler {
         DomeZoneSavedData data = DomeZoneSavedData.get(level);
 
         for (DomeZone zone : data.getAllZones()) {
+            // Логируем всё для отладки
+            level.getServer().sendSystemMessage(
+                    net.minecraft.network.chat.Component.literal(
+                            "[Thaloria] Block broken at " + pos +
+                                    " | isScanning=" + zone.isScanning +
+                                    " | hasBaseline=" + zone.hasBaseline +
+                                    " | shellSize=" + zone.originalShell.size() +
+                                    " | inShell=" + zone.originalShell.contains(pos)
+                    )
+            );
+
             if (zone.isScanning) continue;
             if (!zone.hasBaseline) continue;
 
-            // НОВАЯ ЛОГИКА: проверяем эталон, не shell
             if (zone.originalShell.contains(pos)) {
                 zone.breaches.add(pos);
                 data.setDirty();
+                level.getServer().sendSystemMessage(
+                        net.minecraft.network.chat.Component.literal(
+                                "[Thaloria] BREACH ADDED at " + pos +
+                                        " | Total breaches: " + zone.breaches.size()
+                        )
+                );
             }
         }
     }

@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.Set;
 import java.util.UUID;
 
 public class AtmosphereFilterBlockEntity extends BlockEntity {
@@ -124,6 +125,17 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                     if (existingZone != null && !existingZone.filters.isEmpty()) {
                         existingZone.filters.add(originPos);
                         existingZone.volume = (existingZone.volume + result.volume) / 2f;
+
+                        // ИСПРАВЛЕНИЕ: обновляем эталон и для joined зоны
+                        if (!existingZone.hasBaseline) {
+                            for (BlockPos shellPos : result.shell) {
+                                if (DomeScanTask.isDomeBlock(levelRef.getBlockState(shellPos))) {
+                                    existingZone.originalShell.add(shellPos);
+                                }
+                            }
+                            existingZone.hasBaseline = true;
+                        }
+
                         zoneId = existingZone.id;
                         dataRef.setDirty();
 
@@ -131,24 +143,24 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                                 net.minecraft.network.chat.Component.literal(
                                         "[Thaloria] Filter joined zone! Filters=" +
                                                 existingZone.filters.size() +
-                                                " Breaches=" + existingZone.breaches.size() +
-                                                " Pressure=" + (int)existingZone.pressure
+                                                " Shell=" + existingZone.originalShell.size() +
+                                                " hasBaseline=" + existingZone.hasBaseline
                                 )
                         );
                     } else {
                         DomeZone zone = new DomeZone(UUID.randomUUID());
                         zone.filters.add(originPos);
-                        for (BlockPos shellPos : result.shell) {
-                            if (DomeScanTask.isDomeBlock(level.getBlockState(shellPos))) {
-                                zone.originalShell.add(shellPos);
-                            }
-                        }
-                        zone.volume = result.volume;
+
+                        // ИСПРАВЛЕНИЕ: используем прямой перебор для эталона
+                        // вместо raycast — это гарантирует точные позиции блоков
+                        Set<BlockPos> allDomeBlocks = DomeScanTask.collectAllDomeBlocks(
+                                levelRef, originPos, radius);
+                        zone.originalShell.addAll(allDomeBlocks);
+
+                        zone.volume = result.volume; // объём всё ещё из raycast
                         zone.scanRadius = radius;
                         zone.isScanning = false;
                         zone.hasBaseline = true;
-
-                        // ИСПРАВЛЕНИЕ: восстанавливаем давление
                         zone.pressure = pressureToRestore;
 
                         dataRef.addZone(zone);
@@ -157,7 +169,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         levelRef.getServer().sendSystemMessage(
                                 net.minecraft.network.chat.Component.literal(
                                         "[Thaloria] New zone! Shell=" + zone.originalShell.size() +
-                                                " Breaches=" + zone.breaches.size() +
+                                                " Volume=" + (int)zone.volume +
                                                 " Pressure restored=" + (int)pressureToRestore
                                 )
                         );

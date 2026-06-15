@@ -11,6 +11,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 
+import java.util.Set;
 import java.util.function.Supplier;
 
 public class UpdateBaselinePacket {
@@ -71,14 +72,11 @@ public class UpdateBaselinePacket {
                             level, origin, radius);
 
                     level.getServer().execute(() -> {
-                        // Обновляем эталон
+                        // Обновляем эталон прямым перебором блоков
                         zone.originalShell.clear();
-                        for (BlockPos shellPos : result.shell) {
-                            // Добавляем только если это реальный блок купола
-                            if (DomeScanTask.isDomeBlock(level.getBlockState(shellPos))) {
-                                zone.originalShell.add(shellPos);
-                            }
-                        }
+                        Set<BlockPos> allDomeBlocks = DomeScanTask.collectAllDomeBlocks(
+                                level, origin, radius);
+                        zone.originalShell.addAll(allDomeBlocks);
                         zone.volume = result.volume;
                         zone.hasBaseline = true;
 

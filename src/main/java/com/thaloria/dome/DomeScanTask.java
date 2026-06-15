@@ -180,4 +180,27 @@ public class DomeScanTask {
             this.volume = volume;
         }
     }
+
+    // Собираем все блоки купола в радиусе от фильтра
+    // Это надёжнее чем raycast для построения эталона
+    public static Set<BlockPos> collectAllDomeBlocks(ServerLevel level,
+                                                     BlockPos origin, int radius) {
+        Set<BlockPos> domeBlocks = new HashSet<>();
+
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    // Только в пределах сферы радиуса
+                    if (x*x + y*y + z*z > radius * radius) continue;
+
+                    BlockPos pos = origin.offset(x, y, z);
+                    if (isDomeBlock(level.getBlockState(pos))) {
+                        domeBlocks.add(pos);
+                    }
+                }
+            }
+        }
+
+        return domeBlocks;
+    }
 }
