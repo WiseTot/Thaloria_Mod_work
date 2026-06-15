@@ -36,7 +36,7 @@ public class DomeRepairHandler {
         double bestScore = 0;
 
         // Ищем брешь на которую смотрит игрок
-        for (BlockPos breach : BreachOutlineRenderer.BREACHES) {
+        for (BlockPos breach : BreachOutlineRenderer.BREACHES.keySet()) {
             Vec3 center = new Vec3(
                     breach.getX() + 0.5,
                     breach.getY() + 0.5,
