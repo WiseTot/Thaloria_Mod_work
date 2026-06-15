@@ -66,17 +66,25 @@ public class DomeZoneSavedData extends SavedData {
     // вместо AABB по shell блокам — это надёжнее
     private boolean isInsideZone(DomeZone zone, BlockPos pos) {
         if (zone.filters.isEmpty()) return false;
+        if (zone.originalShell.isEmpty()) return false;
 
-        for (BlockPos filterPos : zone.filters) {
-            double dist = Math.sqrt(
-                    Math.pow(pos.getX() - filterPos.getX(), 2) +
-                            Math.pow(pos.getY() - filterPos.getY(), 2) +
-                            Math.pow(pos.getZ() - filterPos.getZ(), 2)
-            );
-            // Игрок внутри если ближе к фильтру чем радиус сканирования
-            if (dist <= zone.scanRadius) return true;
+        // Считаем AABB по блокам эталона
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+
+        for (BlockPos shell : zone.originalShell) {
+            minX = Math.min(minX, shell.getX());
+            minY = Math.min(minY, shell.getY());
+            minZ = Math.min(minZ, shell.getZ());
+            maxX = Math.max(maxX, shell.getX());
+            maxY = Math.max(maxY, shell.getY());
+            maxZ = Math.max(maxZ, shell.getZ());
         }
-        return false;
+
+        // Игрок внутри AABB купола
+        return pos.getX() >= minX && pos.getX() <= maxX
+                && pos.getY() >= minY && pos.getY() <= maxY
+                && pos.getZ() >= minZ && pos.getZ() <= maxZ;
     }
 
     public void resetZoneShell(UUID zoneId, Set<BlockPos> newShell,
