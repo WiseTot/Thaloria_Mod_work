@@ -58,5 +58,23 @@ public class ModNetwork {
                 BreachParticlesPacket::decode,
                 BreachParticlesPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+
+        CHANNEL.registerMessage(id++, OpenBreachDetectorPacket.class,
+                OpenBreachDetectorPacket::encode,
+                OpenBreachDetectorPacket::decode,
+                OpenBreachDetectorPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+
+        CHANNEL.registerMessage(id++, BreachDetectorActionPacket.class,
+                BreachDetectorActionPacket::encode,
+                BreachDetectorActionPacket::decode,
+                BreachDetectorActionPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_SERVER));
+
+        CHANNEL.registerMessage(id++, SyncBreachesPacket.class,
+                SyncBreachesPacket::encode,
+                SyncBreachesPacket::decode,
+                SyncBreachesPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 }

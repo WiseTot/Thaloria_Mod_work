@@ -104,4 +104,12 @@ public class ModBlocks {
                     .sound(SoundType.AMETHYST)
                     .requiresCorrectToolForDrops()
             ));
+
+    public static final RegistryObject<Block> BREACH_DETECTOR =
+            BLOCKS.register("breach_detector",
+                    () -> new BreachDetectorBlock(
+                            BlockBehaviour.Properties.of()
+                                    .strength(3.0F)
+                                    .requiresCorrectToolForDrops()
+                    ));
 }

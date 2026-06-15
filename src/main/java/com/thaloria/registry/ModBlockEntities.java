@@ -1,15 +1,12 @@
 package com.thaloria.registry;
 
 import com.thaloria.ThaloriaMod;
-import com.thaloria.block.entity.AtmosphereFilterBlockEntity;
-import com.thaloria.block.entity.OxygenChargerBlockEntity;
+import com.thaloria.block.entity.*;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
-import com.thaloria.block.entity.OxygenCompressorBlockEntity;
-import com.thaloria.block.entity.GeneratorBlockEntity;
 
 public class ModBlockEntities {
 
@@ -46,5 +43,12 @@ public class ModBlockEntities {
                     () -> BlockEntityType.Builder.of(
                             AtmosphereFilterBlockEntity::new,
                             ModBlocks.ATMOSPHERE_FILTER.get()
+                    ).build(null));
+
+    public static final RegistryObject<BlockEntityType<BreachDetectorBlockEntity>> BREACH_DETECTOR =
+            BLOCK_ENTITIES.register("breach_detector",
+                    () -> BlockEntityType.Builder.of(
+                            BreachDetectorBlockEntity::new,
+                            ModBlocks.BREACH_DETECTOR.get()
                     ).build(null));
 }
