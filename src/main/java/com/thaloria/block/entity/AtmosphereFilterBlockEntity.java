@@ -138,7 +138,11 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                     } else {
                         DomeZone zone = new DomeZone(UUID.randomUUID());
                         zone.filters.add(originPos);
-                        zone.originalShell.addAll(result.shell);
+                        for (BlockPos shellPos : result.shell) {
+                            if (DomeScanTask.isDomeBlock(level.getBlockState(shellPos))) {
+                                zone.originalShell.add(shellPos);
+                            }
+                        }
                         zone.volume = result.volume;
                         zone.scanRadius = radius;
                         zone.isScanning = false;

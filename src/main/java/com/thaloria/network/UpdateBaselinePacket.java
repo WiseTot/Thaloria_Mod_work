@@ -73,7 +73,12 @@ public class UpdateBaselinePacket {
                     level.getServer().execute(() -> {
                         // Обновляем эталон
                         zone.originalShell.clear();
-                        zone.originalShell.addAll(result.shell);
+                        for (BlockPos shellPos : result.shell) {
+                            // Добавляем только если это реальный блок купола
+                            if (DomeScanTask.isDomeBlock(level.getBlockState(shellPos))) {
+                                zone.originalShell.add(shellPos);
+                            }
+                        }
                         zone.volume = result.volume;
                         zone.hasBaseline = true;
 
