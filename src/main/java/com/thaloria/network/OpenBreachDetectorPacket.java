@@ -50,12 +50,21 @@ public class OpenBreachDetectorPacket {
     public static void handle(OpenBreachDetectorPacket packet,
                               Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
-            Minecraft mc = Minecraft.getInstance();
-            mc.setScreen(new BreachDetectorScreen(
-                    packet.pos, packet.isPowered, packet.autoMonitor,
-                    packet.breachCount, packet.shellCount,
-                    packet.pressure, packet.hasZone
-            ));
+            net.minecraft.client.Minecraft mc =
+                    net.minecraft.client.Minecraft.getInstance();
+
+            if (mc.screen instanceof BreachDetectorScreen screen) {
+                // Обновляем открытый экран без переоткрытия
+                screen.updateData(packet.isPowered, packet.autoMonitor,
+                        packet.breachCount, packet.shellCount,
+                        packet.pressure, packet.hasZone);
+            } else {
+                mc.setScreen(new BreachDetectorScreen(
+                        packet.pos, packet.isPowered, packet.autoMonitor,
+                        packet.breachCount, packet.shellCount,
+                        packet.pressure, packet.hasZone
+                ));
+            }
         });
         ctx.get().setPacketHandled(true);
     }

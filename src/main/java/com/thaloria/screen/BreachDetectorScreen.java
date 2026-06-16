@@ -2,6 +2,7 @@ package com.thaloria.screen;
 
 import com.thaloria.network.BreachDetectorActionPacket;
 import com.thaloria.network.ModNetwork;
+import com.thaloria.network.RequestDetectorDataPacket;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -11,12 +12,13 @@ import net.minecraft.network.chat.Component;
 public class BreachDetectorScreen extends Screen {
 
     private final BlockPos detectorPos;
-    private final boolean isPowered;
+    private boolean isPowered;
     private boolean autoMonitor;
-    private final int breachCount;
-    private final int shellCount;
-    private final float pressure;
-    private final boolean hasZone;
+    private int breachCount;
+    private int shellCount;
+    private float pressure;
+    private boolean hasZone;
+    private int updateTick = 0;
 
     public BreachDetectorScreen(BlockPos pos, boolean isPowered, boolean autoMonitor,
                                 int breachCount, int shellCount,
@@ -31,12 +33,33 @@ public class BreachDetectorScreen extends Screen {
         this.hasZone = hasZone;
     }
 
+    public void updateData(boolean isPowered, boolean autoMonitor,
+                           int breachCount, int shellCount,
+                           float pressure, boolean hasZone) {
+        this.isPowered   = isPowered;
+        this.autoMonitor = autoMonitor;
+        this.breachCount = breachCount;
+        this.shellCount  = shellCount;
+        this.pressure    = pressure;
+        this.hasZone     = hasZone;
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        updateTick++;
+        if (updateTick >= 10) {
+            updateTick = 0;
+            ModNetwork.CHANNEL.sendToServer(
+                    new RequestDetectorDataPacket(detectorPos));
+        }
+    }
+
     @Override
     protected void init() {
         int cx = width / 2;
         int panelY = height / 2 - 80;
 
-        // Кнопка 1 — сканировать и показать бреши
         addRenderableWidget(Button.builder(
                         Component.literal("§eScan Breaches"),
                         btn -> {
@@ -53,7 +76,6 @@ public class BreachDetectorScreen extends Screen {
                 .build()
         );
 
-        // Кнопка 2 — авто мониторинг вкл/выкл
         addRenderableWidget(Button.builder(
                         Component.literal(autoMonitor
                                 ? "§aAuto-Monitor: ON"
@@ -86,36 +108,28 @@ public class BreachDetectorScreen extends Screen {
         int px = cx - panelW / 2;
         int py = height / 2 - 80;
 
-        // Фон
         graphics.fill(px, py, px + panelW, py + panelH, 0xDD050C14);
-        // Рамка — красная если есть бреши, голубая если всё ок
+
         int borderColor = breachCount > 0 ? 0xFFFF3300 : 0xFF00FFCC;
         graphics.fill(px,            py,            px + panelW, py + 1,      borderColor);
         graphics.fill(px,            py + panelH-1, px + panelW, py + panelH, borderColor);
         graphics.fill(px,            py,            px + 1,      py + panelH, borderColor);
         graphics.fill(px + panelW-1, py,            px + panelW, py + panelH, borderColor);
 
-        // Заголовок
         graphics.drawCenteredString(font, "BREACH DETECTOR",
                 cx, py + 6, borderColor);
-
-        // Разделитель
         graphics.fill(px + 6, py + 16, px + panelW - 6, py + 17, 0x8800FFCC);
 
-        // Статус питания
         String powerStr = isPowered ? "§aPOWERED" : "§cNO POWER";
         graphics.drawString(font, "STATUS: " + powerStr,
                 px + 8, py + 22, 0xFFCCCCCC, false);
 
-        // Статус зоны
         String zoneStr = hasZone ? "§aZONE LINKED" : "§cNO ZONE";
         graphics.drawString(font, "ZONE: " + zoneStr,
                 px + 8, py + 34, 0xFFCCCCCC, false);
 
-        // Разделитель
         graphics.fill(px + 6, py + 44, px + panelW - 6, py + 45, 0x4400FFCC);
 
-        // Данные купола
         graphics.drawString(font, "Shell blocks: " + shellCount,
                 px + 8, py + 50, 0xFFAAAAAA, false);
 
@@ -125,7 +139,6 @@ public class BreachDetectorScreen extends Screen {
                 : "§aINTEGRITY: OK";
         graphics.drawString(font, breachStr, px + 8, py + 62, breachColor, false);
 
-        // Давление купола
         graphics.fill(px + 6, py + 74, px + panelW - 6, py + 75, 0x4400FFCC);
         graphics.drawString(font, "DOME PRESSURE", px + 8, py + 79, 0xFF00FFCC, false);
         graphics.drawString(font, (int)pressure + "%",
@@ -144,7 +157,6 @@ public class BreachDetectorScreen extends Screen {
             graphics.fill(px + 8, barY, px + 8 + filled, barY + 8, barColor);
         }
 
-        // Разделитель перед кнопками
         graphics.fill(px + 6, py + 98, px + panelW - 6, py + 99, 0x4400FFCC);
 
         super.render(graphics, mouseX, mouseY, delta);

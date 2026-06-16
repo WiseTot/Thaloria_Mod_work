@@ -76,5 +76,11 @@ public class ModNetwork {
                 SyncBreachesPacket::decode,
                 SyncBreachesPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+
+        CHANNEL.registerMessage(id++, RequestDetectorDataPacket.class,
+                RequestDetectorDataPacket::encode,
+                RequestDetectorDataPacket::decode,
+                RequestDetectorDataPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 }
