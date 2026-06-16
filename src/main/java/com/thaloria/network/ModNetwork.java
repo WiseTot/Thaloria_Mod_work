@@ -53,12 +53,6 @@ public class ModNetwork {
                 OpenFilterScreenPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
 
-        CHANNEL.registerMessage(id++, BreachParticlesPacket.class,
-                BreachParticlesPacket::encode,
-                BreachParticlesPacket::decode,
-                BreachParticlesPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-
         CHANNEL.registerMessage(id++, OpenBreachDetectorPacket.class,
                 OpenBreachDetectorPacket::encode,
                 OpenBreachDetectorPacket::decode,

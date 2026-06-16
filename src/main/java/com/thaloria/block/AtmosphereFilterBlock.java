@@ -2,8 +2,6 @@ package com.thaloria.block;
 
 import com.thaloria.block.entity.AtmosphereFilterBlockEntity;
 import com.thaloria.dome.DomeZone;
-import com.thaloria.dome.DomeZoneSavedData;
-import com.thaloria.network.BreachParticlesPacket;
 import com.thaloria.network.ModNetwork;
 import com.thaloria.network.OpenFilterScreenPacket;
 import com.thaloria.registry.ModBlockEntities;
@@ -61,15 +59,6 @@ public class AtmosphereFilterBlock extends BaseEntityBlock {
                             shellCount, breachCount, pressure, pressureDelta, filterCount
                     )
             );
-
-            // Если есть бреши — показываем частицы автоматически
-            // zone находится ВНУТРИ блока if, поэтому всё правильно
-            if (zone != null && !zone.breaches.isEmpty()) {
-                ModNetwork.CHANNEL.send(
-                        PacketDistributor.PLAYER.with(() -> serverPlayer),
-                        new BreachParticlesPacket(new java.util.ArrayList<>(zone.breaches))
-                );
-            }
         }
 
         return InteractionResult.CONSUME;
