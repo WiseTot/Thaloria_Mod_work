@@ -1,8 +1,6 @@
 package com.thaloria.screen;
 
 import com.thaloria.menu.GeneratorMenu;
-import com.thaloria.network.GeneratorActionPacket;
-import com.thaloria.network.ModNetwork;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
