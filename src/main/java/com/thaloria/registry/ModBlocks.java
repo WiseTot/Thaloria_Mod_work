@@ -27,7 +27,7 @@ public class ModBlocks {
             );
 
     public static void register(IEventBus eventBus) {
-                BLOCKS.register(eventBus);
+        BLOCKS.register(eventBus);
     }
 
     public static final RegistryObject<Block> OXYGEN_COMPRESSOR =
@@ -66,20 +66,20 @@ public class ModBlocks {
 
     public static final RegistryObject<Block> DUST =
             BLOCKS.register("dust",
-            () -> new Block(
-                    BlockBehaviour.Properties
-                    .copy(Blocks.SAND)
-                    .strength(0.5f)
-                    .sound(SoundType.SAND)
-            ));
+                    () -> new Block(
+                            BlockBehaviour.Properties
+                                    .copy(Blocks.SAND)
+                                    .strength(0.5f)
+                                    .sound(SoundType.SAND)
+                    ));
 
     public static final RegistryObject<Block> DUST_LAYER =
             BLOCKS.register("dust_layer",
-            () -> new SnowLayerBlock(
-                    BlockBehaviour.Properties
-                    .copy(Blocks.SNOW)
-                    .sound(SoundType.SAND)
-            ));
+                    () -> new SnowLayerBlock(
+                            BlockBehaviour.Properties
+                                    .copy(Blocks.SNOW)
+                                    .sound(SoundType.SAND)
+                    ));
 
     public static final RegistryObject<Block> PETRIFIED_FUNGAL_SHELL = BLOCKS.register("petrified_fungal_shell",
             () -> new Block(BlockBehaviour.Properties

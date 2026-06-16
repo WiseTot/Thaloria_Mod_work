@@ -64,27 +64,89 @@ public class DomeZoneSavedData extends SavedData {
 
     // ИСПРАВЛЕНИЕ: используем центр фильтра и радиус сканирования
     // вместо AABB по shell блокам — это надёжнее
-    private boolean isInsideZone(DomeZone zone, BlockPos pos) {
+    private boolean isInsideZone(DomeZone zone, BlockPos playerPos) {
         if (zone.filters.isEmpty()) return false;
         if (zone.originalShell.isEmpty()) return false;
 
-        // Считаем AABB по блокам эталона
-        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (BlockPos filterPos : zone.filters) {
+            int inside = 0;
+            int total = 6;
 
-        for (BlockPos shell : zone.originalShell) {
-            minX = Math.min(minX, shell.getX());
-            minY = Math.min(minY, shell.getY());
-            minZ = Math.min(minZ, shell.getZ());
-            maxX = Math.max(maxX, shell.getX());
-            maxY = Math.max(maxY, shell.getY());
-            maxZ = Math.max(maxZ, shell.getZ());
+            // Центр
+            if (!rayHitsShell(zone,
+                    playerPos.getX() + 0.5, playerPos.getY() + 0.5,
+                    playerPos.getZ() + 0.5, filterPos)) inside++;
+            // Верх-лево-перед
+            if (!rayHitsShell(zone,
+                    playerPos.getX() + 0.2, playerPos.getY() + 0.9,
+                    playerPos.getZ() + 0.2, filterPos)) inside++;
+            // Верх-право-зад
+            if (!rayHitsShell(zone,
+                    playerPos.getX() + 0.8, playerPos.getY() + 0.9,
+                    playerPos.getZ() + 0.8, filterPos)) inside++;
+            // Низ
+            if (!rayHitsShell(zone,
+                    playerPos.getX() + 0.5, playerPos.getY() + 0.1,
+                    playerPos.getZ() + 0.5, filterPos)) inside++;
+            // Лево-зад
+            if (!rayHitsShell(zone,
+                    playerPos.getX() + 0.1, playerPos.getY() + 0.5,
+                    playerPos.getZ() + 0.8, filterPos)) inside++;
+            // Право-перед
+            if (!rayHitsShell(zone,
+                    playerPos.getX() + 0.9, playerPos.getY() + 0.5,
+                    playerPos.getZ() + 0.2, filterPos)) inside++;
+
+            // 5 из 6 чтобы быть внутри
+            if (inside >= 5) return true;
         }
+        return false;
+    }
 
-        // Игрок внутри AABB купола
-        return pos.getX() >= minX && pos.getX() <= maxX
-                && pos.getY() >= minY && pos.getY() <= maxY
-                && pos.getZ() >= minZ && pos.getZ() <= maxZ;
+    private boolean rayHitsShell(DomeZone zone,
+                                 double fromX, double fromY, double fromZ,
+                                 BlockPos to) {
+        double dx = to.getX() + 0.5 - fromX;
+        double dy = to.getY() + 0.5 - fromY;
+        double dz = to.getZ() + 0.5 - fromZ;
+        double length = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        if (length == 0) return false;
+
+        dx /= length; dy /= length; dz /= length;
+
+        double x = fromX;
+        double y = fromY;
+        double z = fromZ;
+
+        double step = 0.4;
+        int steps = (int)(length / step) + 1;
+        int skipSteps = (int)(0.8 / step); // Уменьшили skip до 0.8
+        BlockPos last = null;
+
+        for (int i = 0; i < steps; i++) {
+            x += dx * step;
+            y += dy * step;
+            z += dz * step;
+
+            BlockPos pos = BlockPos.containing(x, y, z);
+            if (pos.equals(last)) continue;
+            last = pos;
+
+            // Если достигли фильтра — оболочку не пересекли
+            if (pos.getX() == to.getX() && pos.getY() == to.getY()
+                    && pos.getZ() == to.getZ()) return false;
+
+            if (i < skipSteps) continue;
+
+            if (zone.originalShell.contains(pos)) return true;
+            if (zone.originalShell.contains(pos.above())) return true;
+            if (zone.originalShell.contains(pos.below())) return true;
+            if (zone.originalShell.contains(pos.north())) return true;
+            if (zone.originalShell.contains(pos.south())) return true;
+            if (zone.originalShell.contains(pos.east())) return true;
+            if (zone.originalShell.contains(pos.west())) return true;
+        }
+        return false;
     }
 
     public void resetZoneShell(UUID zoneId, Set<BlockPos> newShell,

@@ -120,4 +120,8 @@ public class ModItems {
     public static final RegistryObject<Item> FUNGAL_HEART = ITEMS.register("fungal_heart",
             () -> new BlockItem(ModBlocks.FUNGAL_HEART.get(),
                     new Item.Properties()));
+    public static final RegistryObject<Item> BREACH_DETECTOR = ITEMS.register("breach_detector",
+                    () -> new BlockItem(ModBlocks.BREACH_DETECTOR.get(),
+                            new Item.Properties()
+                    ));
 }
