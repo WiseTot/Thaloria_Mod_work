@@ -11,13 +11,14 @@ import net.minecraftforge.items.ItemStackHandler;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import com.thaloria.menu.OxygenCompressorMenu;
 
-public class OxygenCompressorBlockEntity
-        extends BlockEntity
-        implements MenuProvider {
+public class OxygenCompressorBlockEntity extends BlockEntity implements MenuProvider {
+
+    private static final int ENERGY_PER_CHARGE = 3;
 
     private int tickCounter = 0;
 
@@ -28,36 +29,69 @@ public class OxygenCompressorBlockEntity
         }
     };
 
+    // [0] = кислород канистры (-1 если пусто), [1] = isPowered
+    private final int[] syncValues = new int[]{-1, 0};
+
+    private final ContainerData data = new ContainerData() {
+        @Override public int get(int index)              { return syncValues[index]; }
+        @Override public void set(int index, int value)  { syncValues[index] = value; }
+        @Override public int getCount()                  { return 2; }
+    };
+
     public OxygenCompressorBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.OXYGEN_COMPRESSOR.get(), pos, state);
     }
 
-    public void tick() {
+    public ItemStackHandler getItemHandler() { return itemHandler; }
+    public ContainerData getData()           { return data; }
 
+    public void tick() {
         if (level == null || level.isClientSide) return;
 
-        tickCounter++;
+        // Обновляем кислород в syncValues
+        ItemStack stack = itemHandler.getStackInSlot(0);
+        syncValues[0] = (stack.isEmpty() || stack.getItem() != ModItems.OXYGEN_CANISTER.get())
+                ? -1
+                : stack.getOrCreateTag().getInt("Oxygen");
 
-        if (tickCounter >= 20) { // раз в секунду
+        // Ищем генератор
+        GeneratorBlockEntity generator = findGenerator();
+        boolean powered = generator != null && generator.hasEnergy();
+        syncValues[1] = powered ? 1 : 0;
+
+        if (!powered) {
             tickCounter = 0;
+            return;
+        }
 
-            ItemStack stack = itemHandler.getStackInSlot(0);
-
-            if (!stack.isEmpty() &&
-                    stack.getItem() == ModItems.OXYGEN_CANISTER.get()) {
-
+        tickCounter++;
+        if (tickCounter >= 20) {
+            tickCounter = 0;
+            if (!stack.isEmpty() && stack.getItem() == ModItems.OXYGEN_CANISTER.get()) {
                 int oxygen = stack.getOrCreateTag().getInt("Oxygen");
-
                 if (oxygen < 100) {
                     stack.getOrCreateTag().putInt("Oxygen", oxygen + 1);
+                    generator.consumeEnergy(ENERGY_PER_CHARGE);
                     setChanged();
                 }
             }
         }
     }
 
-    public ItemStackHandler getItemHandler() {
-        return itemHandler;
+    private GeneratorBlockEntity findGenerator() {
+        if (level == null) return null;
+        int radius = GeneratorBlockEntity.WIRELESS_RADIUS;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    BlockPos p = worldPosition.offset(dx, dy, dz);
+                    if (level.getBlockEntity(p) instanceof GeneratorBlockEntity gen) {
+                        if (gen.hasEnergy()) return gen;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     @Override
@@ -78,9 +112,7 @@ public class OxygenCompressorBlockEntity
     }
 
     @Override
-    public AbstractContainerMenu createMenu(int id,
-                                            Inventory playerInventory,
-                                            Player player) {
+    public AbstractContainerMenu createMenu(int id, Inventory playerInventory, Player player) {
         return new OxygenCompressorMenu(id, playerInventory, this);
     }
 }
