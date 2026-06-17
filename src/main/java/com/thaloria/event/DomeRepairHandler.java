@@ -1,12 +1,16 @@
 package com.thaloria.event;
 
 import com.thaloria.block.entity.AtmosphereFilterBlockEntity;
-import com.thaloria.client.render.BreachOutlineRenderer;
 import com.thaloria.dome.DomeZone;
 import com.thaloria.dome.DomeZoneSavedData;
 import com.thaloria.registry.ModBlocks;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -19,67 +23,99 @@ import com.thaloria.ThaloriaMod;
 @Mod.EventBusSubscriber(modid = ThaloriaMod.MOD_ID)
 public class DomeRepairHandler {
 
-    private static final double MAX_DISTANCE = 6.0;
+    private static final double MAX_REPAIR_DISTANCE = 8.0;
+    private static final double MIN_DOT = 0.90;
 
     @SubscribeEvent
-    public static void onRightClick(PlayerInteractEvent.RightClickItem event) {
+    public static void onRightClickEmpty(PlayerInteractEvent.RightClickEmpty event) {
+        if (event.getHand() != InteractionHand.MAIN_HAND) return;
+        tryRepair(event.getEntity(), event.getItemStack());
+    }
+
+    @SubscribeEvent
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (event.getHand() != InteractionHand.MAIN_HAND) return;
         Player player = event.getEntity();
-        if (!(player.level() instanceof ServerLevel level)) return;
         ItemStack stack = event.getItemStack();
 
         if (!stack.is(ModBlocks.DOME_GLASS.get().asItem())) return;
+        if (!(player.level() instanceof ServerLevel)) return;
 
-        Vec3 eye = player.getEyePosition();
+        // Не мешаем если кликают на сам блок купола
+        if (event.getLevel().getBlockState(event.getPos())
+                .is(ModBlocks.DOME_GLASS.get())) return;
+
+        if (tryRepair(player, stack)) {
+            event.setCanceled(true);
+        }
+    }
+
+    private static boolean tryRepair(Player player, ItemStack stack) {
+        if (!stack.is(ModBlocks.DOME_GLASS.get().asItem())) return false;
+        if (!(player.level() instanceof ServerLevel level)) return false;
+
+        Vec3 eye  = player.getEyePosition();
         Vec3 look = player.getLookAngle();
 
+        // Читаем бреши прямо из серверных данных DomeZone
+        DomeZoneSavedData savedData = DomeZoneSavedData.get(level);
+
         BlockPos bestBreach = null;
-        double bestScore = 0;
+        double   bestDot    = MIN_DOT;
 
-        // Ищем брешь на которую смотрит игрок
-        for (BlockPos breach : BreachOutlineRenderer.BREACHES.keySet()) {
-            Vec3 center = new Vec3(
-                    breach.getX() + 0.5,
-                    breach.getY() + 0.5,
-                    breach.getZ() + 0.5
-            );
-            double distance = center.distanceTo(eye);
-            if (distance > MAX_DISTANCE) continue;
+        for (DomeZone zone : savedData.getAllZones()) {
+            for (BlockPos breach : zone.breaches) {
+                // Дополнительно проверяем что блок действительно воздух
+                if (!level.getBlockState(breach).isAir()) continue;
 
-            Vec3 dir = center.subtract(eye).normalize();
-            double dot = dir.dot(look);
+                Vec3 center   = Vec3.atCenterOf(breach);
+                double distance = center.distanceTo(eye);
+                if (distance > MAX_REPAIR_DISTANCE) continue;
 
-            if (dot > bestScore && dot > 0.92) {
-                bestScore = dot;
-                bestBreach = breach;
-            }
-        }
+                Vec3 dir = center.subtract(eye).normalize();
+                double dot = dir.dot(look);
 
-        if (bestBreach == null) return;
-
-        // Ставим блок купола
-        level.setBlock(bestBreach, ModBlocks.DOME_GLASS.get().defaultBlockState(), 3);
-        stack.shrink(1);
-        BreachOutlineRenderer.BREACHES.remove(bestBreach);
-
-        // Убираем брешь из всех зон которые её содержат
-        DomeZoneSavedData data = DomeZoneSavedData.get(level);
-        for (DomeZone zone : data.getAllZones()) {
-            if (zone.breaches.remove(bestBreach)) {
-                // Брешь была в этой зоне — помечаем как изменённую
-                data.setDirty();
-
-                // Если брешей больше нет — запускаем пересканирование
-                // чтобы убедиться что купол герметичен
-                if (zone.breaches.isEmpty()) {
-                    triggerRescan(level, zone, data);
+                if (dot > bestDot) {
+                    bestDot    = dot;
+                    bestBreach = breach;
                 }
             }
         }
 
-        event.setCanceled(true);
+        if (bestBreach == null) return false;
+
+        // Ставим блок купола
+        level.setBlock(bestBreach, ModBlocks.DOME_GLASS.get().defaultBlockState(), 3);
+
+        // Звук
+        level.playSound(null, bestBreach,
+                SoundEvents.GLASS_PLACE, SoundSource.BLOCKS, 1.0f, 1.0f);
+
+        // Тратим предмет (не в творческом режиме)
+        if (!player.isCreative()) {
+            stack.shrink(1);
+        }
+
+        // Обновляем блок на клиенте
+        if (player instanceof ServerPlayer serverPlayer) {
+            serverPlayer.connection.send(
+                    new ClientboundBlockUpdatePacket(level, bestBreach));
+        }
+
+        // Удаляем брешь из зон, пересканируем если нужно
+        final BlockPos repairedPos = bestBreach;
+        for (DomeZone zone : savedData.getAllZones()) {
+            if (zone.breaches.remove(repairedPos)) {
+                savedData.setDirty();
+                if (zone.breaches.isEmpty()) {
+                    triggerRescan(level, zone, savedData);
+                }
+            }
+        }
+
+        return true;
     }
 
-    // Перезапускаем сканирование для зоны через ближайший фильтр
     private static void triggerRescan(ServerLevel level, DomeZone zone,
                                       DomeZoneSavedData data) {
         for (BlockPos filterPos : zone.filters) {
