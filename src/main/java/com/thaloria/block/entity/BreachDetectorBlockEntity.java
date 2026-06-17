@@ -13,9 +13,9 @@ import java.util.UUID;
 
 public class BreachDetectorBlockEntity extends BlockEntity {
 
-    public boolean isPowered = false;
-    public boolean autoMonitor = false; // Кнопка 2 — авто мониторинг погоды
-    private UUID zoneId = null;
+    public boolean isPowered    = false;
+    public boolean autoMonitor  = false;
+    private UUID zoneId         = null;
 
     public BreachDetectorBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.BREACH_DETECTOR.get(), pos, state);
@@ -28,42 +28,11 @@ public class BreachDetectorBlockEntity extends BlockEntity {
 
         isPowered = checkPower(serverLevel);
 
-        // Находим зону автоматически
         if (isPowered) {
             DomeZoneSavedData data = DomeZoneSavedData.get(serverLevel);
             DomeZone zone = data.getZoneContaining(this.getBlockPos());
             zoneId = zone != null ? zone.id : null;
-
-            // Авто мониторинг погоды — при дожде ломаем случайные блоки
-            if (autoMonitor && zone != null && zone.hasBaseline) {
-                handleWeatherDamage(serverLevel, zone, data);
-            }
         }
-    }
-
-    // При дожде — случайно ломаем 1-3 блока из эталона
-    private void handleWeatherDamage(ServerLevel level, DomeZone zone,
-                                     DomeZoneSavedData data) {
-        if (!level.isRaining()) return;
-        // Раз в 10 секунд при дожде
-        if (level.getGameTime() % 200 != 0) return;
-        if (zone.originalShell.isEmpty()) return;
-
-        // Берём случайный блок из эталона который ещё цел
-        var shellList = zone.originalShell.stream()
-                .filter(pos -> !zone.breaches.contains(pos))
-                .toList();
-        if (shellList.isEmpty()) return;
-
-        int count = 1 + level.random.nextInt(2); // 1-2 блока
-        for (int i = 0; i < Math.min(count, shellList.size()); i++) {
-            BlockPos target = shellList.get(level.random.nextInt(shellList.size()));
-            // Ломаем блок в мире
-            level.removeBlock(target, false);
-            // Добавляем брешь
-            zone.breaches.add(target);
-        }
-        data.setDirty();
     }
 
     private boolean checkPower(ServerLevel level) {
