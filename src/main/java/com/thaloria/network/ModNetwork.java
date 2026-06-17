@@ -76,5 +76,12 @@ public class ModNetwork {
                 RequestDetectorDataPacket::decode,
                 RequestDetectorDataPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
+
+        // Клиент → Сервер: ремонт бреши
+        CHANNEL.registerMessage(id++, RepairBreachPacket.class,
+                RepairBreachPacket::encode,
+                RepairBreachPacket::decode,
+                RepairBreachPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 }

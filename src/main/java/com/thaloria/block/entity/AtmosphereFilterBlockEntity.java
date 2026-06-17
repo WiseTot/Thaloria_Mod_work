@@ -43,8 +43,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         }
 
         if (isPowered && zoneId != null && !isScanning) {
-            // ИСПРАВЛЕНИЕ: проверяем что зона ещё существует
-            // Если нет (была удалена) — сбрасываем zoneId и сканируем заново
             DomeZoneSavedData data = DomeZoneSavedData.get(serverLevel);
             if (data.getZone(zoneId) == null) {
                 zoneId = null;
@@ -89,12 +87,30 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         }
     }
 
+    /**
+     * ЛЁГКАЯ проверка брешей — только сравниваем эталон с реальностью.
+     * Эталон НЕ меняется. Вызывается кнопкой "Scan" в UI фильтра.
+     */
+    public int checkBreaches(ServerLevel level) {
+        if (zoneId == null) return -1;
+        DomeZoneSavedData data = DomeZoneSavedData.get(level);
+        DomeZone zone = data.getZone(zoneId);
+        if (zone == null || !zone.hasBaseline) return -1;
+
+        zone.recalculateBreaches(level);
+        data.setDirty();
+        return zone.breaches.size();
+    }
+
+    /**
+     * ПОЛНОЕ пересканирование — строит новую зону и новый эталон.
+     * Вызывается при включении питания, при потере зоны, и кнопкой "Update Baseline".
+     */
     public void startScan(ServerLevel level) {
         if (isScanning) return;
         isScanning = true;
         scanProgress = 0;
 
-        // ИСПРАВЛЕНИЕ: сохраняем текущее давление перед пересканированием
         float savedPressure = 0f;
         DomeZoneSavedData data = DomeZoneSavedData.get(level);
         if (zoneId != null) {
@@ -126,7 +142,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         existingZone.filters.add(originPos);
                         existingZone.volume = (existingZone.volume + result.volume) / 2f;
 
-                        // ИСПРАВЛЕНИЕ: обновляем эталон и для joined зоны
                         if (!existingZone.hasBaseline) {
                             for (BlockPos shellPos : result.shell) {
                                 if (DomeScanTask.isDomeBlock(levelRef.getBlockState(shellPos))) {
@@ -151,13 +166,11 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         DomeZone zone = new DomeZone(UUID.randomUUID());
                         zone.filters.add(originPos);
 
-                        // ИСПРАВЛЕНИЕ: используем прямой перебор для эталона
-                        // вместо raycast — это гарантирует точные позиции блоков
                         Set<BlockPos> allDomeBlocks = DomeScanTask.collectAllDomeBlocks(
                                 levelRef, originPos, radius);
                         zone.originalShell.addAll(allDomeBlocks);
 
-                        zone.volume = result.volume; // объём всё ещё из raycast
+                        zone.volume = result.volume;
                         zone.scanRadius = radius;
                         zone.isScanning = false;
                         zone.hasBaseline = true;
@@ -200,14 +213,12 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         if (zone != null) {
             zone.filters.remove(this.getBlockPos());
             if (zone.filters.isEmpty()) {
-                // ИСПРАВЛЕНИЕ: удаляем зону полностью включая все данные
                 data.removeZone(zoneId);
             } else {
                 data.setDirty();
             }
         }
 
-        // ИСПРАВЛЕНИЕ: всегда сбрасываем zoneId и сохраняем
         zoneId = null;
         setChanged();
     }

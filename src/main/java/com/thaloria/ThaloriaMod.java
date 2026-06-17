@@ -2,7 +2,6 @@ package com.thaloria;
 
 import com.mojang.logging.LogUtils;
 import com.thaloria.client.render.ThaloriaSkyRenderer;
-import com.thaloria.event.DomeRepairHandler;
 import com.thaloria.event.PlayerAtmosphereHandler;
 import com.thaloria.registry.ModBlockEntities;
 import com.thaloria.registry.ModBlocks;
@@ -60,7 +59,6 @@ public class ThaloriaMod {
         MinecraftForge.EVENT_BUS.register(new PlayerAtmosphereHandler());
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.register(new DomemkrEvent());
-        MinecraftForge.EVENT_BUS.register(new DomeRepairHandler());
         MinecraftForge.EVENT_BUS.register(new PlayerSpawnHandler());
         IEventBus bus = FMLJavaModLoadingContext.get().getModEventBus();
 

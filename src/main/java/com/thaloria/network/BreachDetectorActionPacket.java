@@ -18,8 +18,8 @@ import java.util.function.Supplier;
 public class BreachDetectorActionPacket {
 
     public enum Action {
-        SCAN_BREACHES,      // Кнопка 1 — показать все бреши
-        TOGGLE_AUTO_MONITOR // Кнопка 2 — вкл/выкл авто мониторинг
+        SCAN_BREACHES,
+        TOGGLE_AUTO_MONITOR
     }
 
     private final BlockPos detectorPos;
@@ -71,7 +71,11 @@ public class BreachDetectorActionPacket {
                         return;
                     }
 
-                    // Отправляем бреши клиенту для отображения аутлайнов
+                    // Пересчитываем бреши прямо сейчас — сравниваем эталон с реальностью
+                    zone.recalculateBreaches(level);
+                    DomeZoneSavedData.get(level).setDirty();
+
+                    // Отправляем актуальный список брешей клиенту
                     ModNetwork.CHANNEL.send(
                             PacketDistributor.PLAYER.with(() -> player),
                             new SyncBreachesPacket(
