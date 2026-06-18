@@ -22,69 +22,64 @@ public class ModNetwork {
 
     public static void register() {
         CHANNEL.registerMessage(id++, FilterRadiusPacket.class,
-                FilterRadiusPacket::encode,
-                FilterRadiusPacket::decode,
+                FilterRadiusPacket::encode, FilterRadiusPacket::decode,
                 FilterRadiusPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
 
         CHANNEL.registerMessage(id++, FilterScanPacket.class,
-                FilterScanPacket::encode,
-                FilterScanPacket::decode,
+                FilterScanPacket::encode, FilterScanPacket::decode,
                 FilterScanPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
 
         CHANNEL.registerMessage(id++, RequestFilterDataPacket.class,
-                RequestFilterDataPacket::encode,
-                RequestFilterDataPacket::decode,
+                RequestFilterDataPacket::encode, RequestFilterDataPacket::decode,
                 RequestFilterDataPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
 
         CHANNEL.registerMessage(id++, UpdateBaselinePacket.class,
-                UpdateBaselinePacket::encode,
-                UpdateBaselinePacket::decode,
+                UpdateBaselinePacket::encode, UpdateBaselinePacket::decode,
                 UpdateBaselinePacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
 
         CHANNEL.registerMessage(id++, OpenFilterScreenPacket.class,
-                OpenFilterScreenPacket::encode,
-                OpenFilterScreenPacket::decode,
+                OpenFilterScreenPacket::encode, OpenFilterScreenPacket::decode,
                 OpenFilterScreenPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
 
         CHANNEL.registerMessage(id++, OpenBreachDetectorPacket.class,
-                OpenBreachDetectorPacket::encode,
-                OpenBreachDetectorPacket::decode,
+                OpenBreachDetectorPacket::encode, OpenBreachDetectorPacket::decode,
                 OpenBreachDetectorPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
 
         CHANNEL.registerMessage(id++, BreachDetectorActionPacket.class,
-                BreachDetectorActionPacket::encode,
-                BreachDetectorActionPacket::decode,
+                BreachDetectorActionPacket::encode, BreachDetectorActionPacket::decode,
                 BreachDetectorActionPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
 
         CHANNEL.registerMessage(id++, SyncBreachesPacket.class,
-                SyncBreachesPacket::encode,
-                SyncBreachesPacket::decode,
+                SyncBreachesPacket::encode, SyncBreachesPacket::decode,
                 SyncBreachesPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
 
         CHANNEL.registerMessage(id++, RequestDetectorDataPacket.class,
-                RequestDetectorDataPacket::encode,
-                RequestDetectorDataPacket::decode,
+                RequestDetectorDataPacket::encode, RequestDetectorDataPacket::decode,
                 RequestDetectorDataPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
 
         CHANNEL.registerMessage(id++, RepairBreachPacket.class,
-                RepairBreachPacket::encode,
-                RepairBreachPacket::decode,
+                RepairBreachPacket::encode, RepairBreachPacket::decode,
                 RepairBreachPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
 
         CHANNEL.registerMessage(id++, SyncStormPacket.class,
-                SyncStormPacket::encode,
-                SyncStormPacket::decode,
+                SyncStormPacket::encode, SyncStormPacket::decode,
                 SyncStormPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+
+        // Сервер → Клиент: данные зон для очков давления
+        CHANNEL.registerMessage(id++, SyncPressureZonesPacket.class,
+                SyncPressureZonesPacket::encode, SyncPressureZonesPacket::decode,
+                SyncPressureZonesPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 }

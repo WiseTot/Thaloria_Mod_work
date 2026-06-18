@@ -1,6 +1,7 @@
 package com.thaloria.registry;
 
 import com.thaloria.ThaloriaMod;
+import com.thaloria.item.PressureGogglesItem;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterials;
 import net.minecraft.world.item.Item;
@@ -11,7 +12,6 @@ import net.minecraftforge.registries.RegistryObject;
 import com.thaloria.item.OxygenCanisterItem;
 import net.minecraft.world.item.BlockItem;
 import com.thaloria.item.DomemkrItem;
-import net.minecraft.world.item.BlockItem;
 
 public class ModItems {
 
@@ -50,13 +50,9 @@ public class ModItems {
                             new Item.Properties().stacksTo(1)
                     ));
 
-    public static void register(IEventBus eventBus) {
-        ITEMS.register(eventBus);
-    }
-
     public static final RegistryObject<Item> OXYGEN_CHARGER_ITEM =
             ITEMS.register("oxygen_charger",
-                    () -> new net.minecraft.world.item.BlockItem(
+                    () -> new BlockItem(
                             ModBlocks.OXYGEN_CHARGER.get(),
                             new Item.Properties()
                     ));
@@ -109,19 +105,35 @@ public class ModItems {
                     () -> new BlockItem(ModBlocks.DUST_LAYER.get(),
                             new Item.Properties()));
 
-    public static final RegistryObject<Item> PETRIFIED_FUNGAL_SHELL = ITEMS.register("petrified_fungal_shell",
-            () -> new BlockItem(ModBlocks.PETRIFIED_FUNGAL_SHELL.get(),
-                    new Item.Properties()));
+    public static final RegistryObject<Item> PETRIFIED_FUNGAL_SHELL =
+            ITEMS.register("petrified_fungal_shell",
+                    () -> new BlockItem(ModBlocks.PETRIFIED_FUNGAL_SHELL.get(),
+                            new Item.Properties()));
 
-    public static final RegistryObject<Item> FUNGAL_FLESH = ITEMS.register("fungal_flesh",
-            () -> new BlockItem(ModBlocks.FUNGAL_FLESH.get(),
-                    new Item.Properties()));
+    public static final RegistryObject<Item> FUNGAL_FLESH =
+            ITEMS.register("fungal_flesh",
+                    () -> new BlockItem(ModBlocks.FUNGAL_FLESH.get(),
+                            new Item.Properties()));
 
-    public static final RegistryObject<Item> FUNGAL_HEART = ITEMS.register("fungal_heart",
-            () -> new BlockItem(ModBlocks.FUNGAL_HEART.get(),
-                    new Item.Properties()));
-    public static final RegistryObject<Item> BREACH_DETECTOR = ITEMS.register("breach_detector",
+    public static final RegistryObject<Item> FUNGAL_HEART =
+            ITEMS.register("fungal_heart",
+                    () -> new BlockItem(ModBlocks.FUNGAL_HEART.get(),
+                            new Item.Properties()));
+
+    public static final RegistryObject<Item> BREACH_DETECTOR =
+            ITEMS.register("breach_detector",
                     () -> new BlockItem(ModBlocks.BREACH_DETECTOR.get(),
                             new Item.Properties()
                     ));
+
+    // Очки давления — для Creative тестирования
+    public static final RegistryObject<Item> PRESSURE_GOGGLES =
+            ITEMS.register("pressure_goggles",
+                    () -> new PressureGogglesItem(
+                            new Item.Properties().stacksTo(1)
+                    ));
+
+    public static void register(IEventBus eventBus) {
+        ITEMS.register(eventBus);
+    }
 }

@@ -130,7 +130,7 @@ public class ThaloriaSkyRenderer {
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
         float r = 0.48f, g = 0.55f, b = 0.63f;
-        float alpha = Mth.clamp(progress * 0.92f, 0f, 0.92f);
+        float alpha = Mth.clamp(progress * 0.97f, 0f, 0.97f);
 
         float depth = 150.0F;
 

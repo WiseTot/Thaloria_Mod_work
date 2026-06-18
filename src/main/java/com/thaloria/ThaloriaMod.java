@@ -2,9 +2,11 @@ package com.thaloria;
 
 import com.mojang.logging.LogUtils;
 import com.thaloria.client.render.DustStormRenderer;
+import com.thaloria.client.render.PressureGogglesRenderer;
 import com.thaloria.client.render.ThaloriaSkyRenderer;
 import com.thaloria.command.WeatherCommand;
 import com.thaloria.event.PlayerAtmosphereHandler;
+import com.thaloria.event.PressureGogglesHandler;
 import com.thaloria.registry.ModBlockEntities;
 import com.thaloria.registry.ModBlocks;
 import com.thaloria.registry.ModItems;
@@ -61,6 +63,7 @@ public class ThaloriaMod {
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.register(new DomemkrEvent());
         MinecraftForge.EVENT_BUS.register(new PlayerSpawnHandler());
+        MinecraftForge.EVENT_BUS.register(new PressureGogglesHandler());
 
         IEventBus bus = FMLJavaModLoadingContext.get().getModEventBus();
         ModFeatures.FEATURES.register(bus);
@@ -70,6 +73,7 @@ public class ThaloriaMod {
         event.enqueueWork(() -> {
             MinecraftForge.EVENT_BUS.register(ThaloriaSkyRenderer.class);
             MinecraftForge.EVENT_BUS.register(DustStormRenderer.class);
+            MinecraftForge.EVENT_BUS.register(PressureGogglesRenderer.class);
 
             MenuScreens.register(ModMenus.OXYGEN_CHARGER.get(), OxygenChargerScreen::new);
             MenuScreens.register(ModMenus.OXYGEN_COMPRESSOR.get(), OxygenCompressorScreen::new);
