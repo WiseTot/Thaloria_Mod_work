@@ -3,6 +3,7 @@ package com.thaloria;
 import com.mojang.logging.LogUtils;
 import com.thaloria.client.render.DustStormRenderer;
 import com.thaloria.client.render.ThaloriaSkyRenderer;
+import com.thaloria.command.WeatherCommand;
 import com.thaloria.event.PlayerAtmosphereHandler;
 import com.thaloria.registry.ModBlockEntities;
 import com.thaloria.registry.ModBlocks;
@@ -23,6 +24,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RegisterDimensionSpecialEffectsEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -34,7 +36,6 @@ import com.thaloria.event.DomemkrEvent;
 import com.thaloria.event.PlayerSpawnHandler;
 import com.thaloria.world.biome.ModBiomes;
 import com.thaloria.network.ModNetwork;
-
 import org.slf4j.Logger;
 
 @Mod(ThaloriaMod.MOD_ID)
@@ -54,7 +55,6 @@ public class ThaloriaMod {
         ModNetwork.register();
 
         ModBiomes.BIOMES.register(modEventBus);
-
         modEventBus.addListener(this::clientSetup);
 
         MinecraftForge.EVENT_BUS.register(new PlayerAtmosphereHandler());
@@ -86,11 +86,15 @@ public class ThaloriaMod {
     }
 
     @SubscribeEvent
+    public void onRegisterCommands(RegisterCommandsEvent event) {
+        WeatherCommand.register(event.getDispatcher());
+    }
+
+    @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         if (event.getServer() == null) return;
 
-        // Тикаем шторм в измерении Талории
         for (ServerLevel level : event.getServer().getAllLevels()) {
             if (level.dimension().location()
                     .equals(new ResourceLocation("thaloria", "thaloria_planet"))) {
@@ -99,7 +103,6 @@ public class ThaloriaMod {
         }
     }
 
-    /** Синхронизируем состояние шторма новому игроку при входе */
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer serverPlayer) {
@@ -117,9 +120,7 @@ public class ThaloriaMod {
                         return fogColor;
                     }
                     @Override
-                    public boolean isFoggyAt(int x, int y) {
-                        return false;
-                    }
+                    public boolean isFoggyAt(int x, int y) { return false; }
                 };
         event.register(new ResourceLocation("thaloria", "thaloria_sky"), effects);
     }

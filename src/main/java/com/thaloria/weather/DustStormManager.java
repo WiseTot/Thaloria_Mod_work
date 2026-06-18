@@ -11,76 +11,66 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.PacketDistributor;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class DustStormManager {
 
-    // Состояние шторма
     public static boolean isStormActive = false;
     private static int stormTicksRemaining = 0;
 
-    // Шторм длится 3–6 минут (3600–7200 тиков)
-    private static final int STORM_MIN_TICKS = 3600;
-    private static final int STORM_MAX_TICKS = 7200;
-
-    // Шторм начинается раз в 10–20 минут (12000–24000 тиков)
-    private static final int STORM_COOLDOWN_MIN = 12000;
-    private static final int STORM_COOLDOWN_MAX = 24000;
-
-    private static int nextStormIn = 12000; // первый шторм через 10 минут
-
-    // Урон куполу: раз в 30 секунд ломаем 1–2 блока
+    private static final int STORM_MIN_TICKS   = 3600;
+    private static final int STORM_MAX_TICKS   = 7200;
+    private static final int COOLDOWN_MIN      = 12000;
+    private static final int COOLDOWN_MAX      = 24000;
     private static final int DOME_DAMAGE_INTERVAL = 600;
 
+    private static int nextStormIn = 12000;
+
+    // ── Автоматический тик ───────────────────────────────────────
+
     public static void tick(ServerLevel level) {
-        // Только в измерении Талории
-        if (!level.dimension().location()
-                .equals(new ResourceLocation("thaloria", "thaloria_planet"))) return;
+        if (!isThaloriaLevel(level)) return;
 
         if (isStormActive) {
-            tickStorm(level);
+            stormTicksRemaining--;
+
+            if (stormTicksRemaining % DOME_DAMAGE_INTERVAL == 0) {
+                damageDomes(level);
+            }
+
+            if (stormTicksRemaining <= 0) {
+                stopStorm(level);
+            }
         } else {
-            tickCooldown(level);
+            nextStormIn--;
+            if (nextStormIn <= 0) {
+                startStorm(level);
+            }
         }
     }
 
-    private static void tickStorm(ServerLevel level) {
-        stormTicksRemaining--;
-
-        // Урон куполу раз в 30 секунд
-        if (stormTicksRemaining % DOME_DAMAGE_INTERVAL == 0) {
-            damageDomes(level);
-        }
-
-        if (stormTicksRemaining <= 0) {
-            stopStorm(level);
-        }
-    }
-
-    private static void tickCooldown(ServerLevel level) {
-        nextStormIn--;
-        if (nextStormIn <= 0) {
-            startStorm(level);
-        }
-    }
+    // ── Внутренние методы ─────────────────────────────────────────
 
     private static void startStorm(ServerLevel level) {
-        isStormActive = true;
-        stormTicksRemaining = STORM_MIN_TICKS +
+        int duration = STORM_MIN_TICKS +
                 level.random.nextInt(STORM_MAX_TICKS - STORM_MIN_TICKS);
+        startStormInternal(level, duration);
 
-        // Планируем следующий шторм
-        nextStormIn = STORM_COOLDOWN_MIN +
-                level.random.nextInt(STORM_COOLDOWN_MAX - STORM_COOLDOWN_MIN);
+        // Планируем следующий автоматический шторм
+        nextStormIn = COOLDOWN_MIN +
+                level.random.nextInt(COOLDOWN_MAX - COOLDOWN_MIN);
+    }
 
-        // Синхронизируем всем игрокам в измерении
+    private static void startStormInternal(ServerLevel level, int durationTicks) {
+        isStormActive = true;
+        stormTicksRemaining = durationTicks;
         syncToAll(level, true);
 
         level.getServer().sendSystemMessage(
                 net.minecraft.network.chat.Component.literal(
-                        "§6[Thaloria] Dust storm incoming! Duration: " +
-                                (stormTicksRemaining / 20) + "s"));
+                        "§6[Thaloria] Dust storm! Duration: " +
+                                (durationTicks / 20) + "s"));
     }
 
     private static void stopStorm(ServerLevel level) {
@@ -98,16 +88,14 @@ public class DustStormManager {
         for (DomeZone zone : data.getAllZones()) {
             if (zone.originalShell.isEmpty()) continue;
 
-            // Берём случайные блоки из эталона которые ещё целы
             List<BlockPos> intact = zone.originalShell.stream()
                     .filter(pos -> !zone.breaches.contains(pos))
                     .filter(pos -> level.getBlockState(pos)
                             .is(ModBlocks.DOME_GLASS.get()))
-                    .collect(java.util.stream.Collectors.toList());
+                    .collect(Collectors.toList());
 
             if (intact.isEmpty()) continue;
 
-            // Ломаем 1–2 блока
             int count = 1 + level.random.nextInt(2);
             for (int i = 0; i < Math.min(count, intact.size()); i++) {
                 BlockPos target = intact.get(level.random.nextInt(intact.size()));
@@ -118,6 +106,36 @@ public class DustStormManager {
         }
     }
 
+    // ── Публичные методы для команды ──────────────────────────────
+
+    /** Запустить шторм вручную через команду */
+    public static void startStormManual(ServerLevel level, int durationTicks) {
+        if (isStormActive) {
+            // Если шторм уже идёт — просто продлеваем
+            stormTicksRemaining = durationTicks;
+            syncToAll(level, true);
+        } else {
+            startStormInternal(level, durationTicks);
+        }
+        // Сбрасываем авто-таймер чтобы не накладывались
+        nextStormIn = COOLDOWN_MIN;
+    }
+
+    /** Остановить шторм вручную через команду */
+    public static void stopStormManual(ServerLevel level) {
+        stopStorm(level);
+        // Сбрасываем авто-таймер
+        nextStormIn = COOLDOWN_MIN;
+    }
+
+    // ── Синхронизация ─────────────────────────────────────────────
+
+    public static void syncToPlayer(ServerPlayer player) {
+        ModNetwork.CHANNEL.send(
+                PacketDistributor.PLAYER.with(() -> player),
+                new SyncStormPacket(isStormActive));
+    }
+
     private static void syncToAll(ServerLevel level, boolean active) {
         SyncStormPacket packet = new SyncStormPacket(active);
         for (ServerPlayer player : level.players()) {
@@ -126,10 +144,8 @@ public class DustStormManager {
         }
     }
 
-    /** Вызывается при входе игрока — синхронизируем текущее состояние */
-    public static void syncToPlayer(ServerPlayer player) {
-        ModNetwork.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
-                new SyncStormPacket(isStormActive));
+    private static boolean isThaloriaLevel(ServerLevel level) {
+        return level.dimension().location()
+                .equals(new ResourceLocation("thaloria", "thaloria_planet"));
     }
 }

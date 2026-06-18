@@ -7,6 +7,7 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -16,114 +17,140 @@ public class ThaloriaSkyRenderer {
 
     private static final ResourceLocation GALAXY_TEXTURE =
             new ResourceLocation("thaloria", "textures/environment/galaxy.png");
-
     private static final ResourceLocation MOON_1_TEXTURE =
             new ResourceLocation("thaloria", "textures/environment/moon_1.png");
-
     private static final ResourceLocation MOON_2_TEXTURE =
             new ResourceLocation("thaloria", "textures/environment/moon_2.png");
-
     private static final ResourceLocation SUN_TEXTURE =
             new ResourceLocation("minecraft", "textures/environment/sun.png");
 
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SKY &&
-                Minecraft.getInstance().level.dimension().location().toString().equals("thaloria:thaloria_planet")) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_SKY) return;
+        if (!Minecraft.getInstance().level.dimension().location()
+                .toString().equals("thaloria:thaloria_planet")) return;
 
-            Tesselator tesselator = Tesselator.getInstance();
-            BufferBuilder bufferbuilder = tesselator.getBuilder();
-            float partialTicks = event.getPartialTick();
-            float timeOfDay = Minecraft.getInstance().level.getTimeOfDay(partialTicks);
-            long totalGameTime = Minecraft.getInstance().level.getGameTime();
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder bufferbuilder = tesselator.getBuilder();
+        float partialTicks = event.getPartialTick();
+        float timeOfDay = Minecraft.getInstance().level.getTimeOfDay(partialTicks);
+        long totalGameTime = Minecraft.getInstance().level.getGameTime();
 
-            Vec3 skyColor = Minecraft.getInstance().level.getSkyColor(event.getCamera().getPosition(), partialTicks);
-            float starBrightness = Minecraft.getInstance().level.getStarBrightness(partialTicks);
+        Vec3 skyColor = Minecraft.getInstance().level
+                .getSkyColor(event.getCamera().getPosition(), partialTicks);
+        float starBrightness = Minecraft.getInstance().level.getStarBrightness(partialTicks);
 
-            PoseStack poseStack = new PoseStack();
-            poseStack.pushPose();
-            poseStack.mulPose(Axis.XP.rotationDegrees(event.getCamera().getXRot()));
-            poseStack.mulPose(Axis.YP.rotationDegrees(event.getCamera().getYRot() + 180.0F));
+        PoseStack poseStack = new PoseStack();
+        poseStack.pushPose();
+        poseStack.mulPose(Axis.XP.rotationDegrees(event.getCamera().getXRot()));
+        poseStack.mulPose(Axis.YP.rotationDegrees(event.getCamera().getYRot() + 180.0F));
 
-            Matrix4f projectionMatrix = event.getProjectionMatrix();
-            RenderSystem.setProjectionMatrix(projectionMatrix, VertexSorting.DISTANCE_TO_ORIGIN);
+        Matrix4f projectionMatrix = event.getProjectionMatrix();
+        RenderSystem.setProjectionMatrix(projectionMatrix, VertexSorting.DISTANCE_TO_ORIGIN);
 
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.depthMask(false);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.depthMask(false);
 
-            // 1. БАЗОВОЕ НЕБО
-            renderSolidSkybox(poseStack, tesselator, bufferbuilder, (float)skyColor.x, (float)skyColor.y, (float)skyColor.z);
+        // 1. БАЗОВОЕ НЕБО
+        renderSolidSkybox(poseStack, tesselator, bufferbuilder,
+                (float)skyColor.x, (float)skyColor.y, (float)skyColor.z);
 
-            // 2. ГЛОБАЛЬНЫЙ ГОРИЗОНТ
-            renderGlobalHorizon(poseStack, tesselator, bufferbuilder, timeOfDay);
+        // 2. ГОРИЗОНТ
+        renderGlobalHorizon(poseStack, tesselator, bufferbuilder, timeOfDay);
 
-            // --- ВКЛЮЧАЕМ РЕЖИМ СВЕЧЕНИЯ (Для Галактики, Солнца и теперь ЛУН!) ---
-            RenderSystem.blendFunc(
-                    com.mojang.blaze3d.platform.GlStateManager.SourceFactor.SRC_ALPHA,
-                    com.mojang.blaze3d.platform.GlStateManager.DestFactor.ONE
-            );
+        RenderSystem.blendFunc(
+                com.mojang.blaze3d.platform.GlStateManager.SourceFactor.SRC_ALPHA,
+                com.mojang.blaze3d.platform.GlStateManager.DestFactor.ONE
+        );
 
-            // 3. ГАЛАКТИКА
-            if (starBrightness > 0.0F) {
-                renderFullSkybox(poseStack, tesselator, bufferbuilder, GALAXY_TEXTURE, 100.0F, starBrightness);
-            }
+        // 3. ГАЛАКТИКА
+        if (starBrightness > 0.0F) {
+            renderFullSkybox(poseStack, tesselator, bufferbuilder,
+                    GALAXY_TEXTURE, 100.0F, starBrightness);
+        }
 
-            // 4. АУРА СОЛНЦА
-            renderSunAura(poseStack, tesselator, bufferbuilder, timeOfDay, event.getCamera());
+        // 4. АУРА СОЛНЦА
+        renderSunAura(poseStack, tesselator, bufferbuilder, timeOfDay, event.getCamera());
 
-            // 5. СОЛНЦЕ
+        // 5. СОЛНЦЕ
+        poseStack.pushPose();
+        poseStack.mulPose(Axis.YP.rotationDegrees(-90.0F));
+        poseStack.mulPose(Axis.XP.rotationDegrees(timeOfDay * 360.0F));
+        renderCelestialObject(poseStack, tesselator, bufferbuilder, SUN_TEXTURE, 30.0F, 1.0F);
+        poseStack.popPose();
+
+        // 6. ЛУНЫ
+        if (starBrightness > 0.0F) {
+            float moonAlpha = Math.min(0.8F, starBrightness * 0.9F);
+
             poseStack.pushPose();
             poseStack.mulPose(Axis.YP.rotationDegrees(-90.0F));
-            poseStack.mulPose(Axis.XP.rotationDegrees(timeOfDay * 360.0F));
-            // Солнце всегда яркое (alpha = 1.0F)
-            renderCelestialObject(poseStack, tesselator, bufferbuilder, SUN_TEXTURE, 30.0F, 1.0F);
+            poseStack.mulPose(Axis.XP.rotationDegrees(timeOfDay * 360.0F + 180.0F));
+            renderCelestialObject(poseStack, tesselator, bufferbuilder,
+                    MOON_1_TEXTURE, 8.0F, moonAlpha);
             poseStack.popPose();
 
-            // 6. ЛУНЫ (Теперь тоже в режиме свечения!)
-            if (starBrightness > 0.0F) {
-                // Используем starBrightness как прозрачность.
-                // На закате они будут бледными и смешиваться с красным небом. Ночью будут яркими.
-                float moonAlpha = Math.min(0.8F, starBrightness * 0.9F); // Чуть усиливаем яркость
+            poseStack.pushPose();
+            poseStack.mulPose(Axis.YP.rotationDegrees(-90.0F));
+            float dayCycle = (totalGameTime % 168000L) / 168000.0F;
+            float wobble = (float)Math.sin(dayCycle * Math.PI * 2.0D) * 40.0F;
+            poseStack.mulPose(Axis.ZP.rotationDegrees(wobble));
+            poseStack.mulPose(Axis.XP.rotationDegrees(timeOfDay * 360.0F * 1.5F + 180.0F));
+            renderCelestialObject(poseStack, tesselator, bufferbuilder,
+                    MOON_2_TEXTURE, 4.0F, moonAlpha);
+            poseStack.popPose();
+        }
 
-                poseStack.pushPose();
-                poseStack.mulPose(Axis.YP.rotationDegrees(-90.0F));
-                poseStack.mulPose(Axis.XP.rotationDegrees(timeOfDay * 360.0F + 180.0F));
-                renderCelestialObject(poseStack, tesselator, bufferbuilder, MOON_1_TEXTURE, 8.0F, moonAlpha);
-                poseStack.popPose();
+        RenderSystem.defaultBlendFunc();
 
-                poseStack.pushPose();
-                poseStack.mulPose(Axis.YP.rotationDegrees(-90.0F));
-                float dayCycle = (totalGameTime % 168000L) / 168000.0F;
-                float wobble = (float) Math.sin(dayCycle * Math.PI * 2.0D) * 40.0F;
-                poseStack.mulPose(Axis.ZP.rotationDegrees(wobble));
-                poseStack.mulPose(Axis.XP.rotationDegrees(timeOfDay * 360.0F * 1.5F + 180.0F));
-                renderCelestialObject(poseStack, tesselator, bufferbuilder, MOON_2_TEXTURE, 4.0F, moonAlpha);
-                poseStack.popPose();
-            }
+        // 7. ТУМАН ШТОРМА ПОВЕРХ НЕБА
+        float stormProgress = DustStormRenderer.getProgress();
+        if (stormProgress > 0f && DustStormRenderer.isThaloriaLevel()) {
+            renderStormSkyFog(poseStack, tesselator, bufferbuilder, stormProgress);
+        }
 
-            // ... (предыдущий код лун) ...
+        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
+        RenderSystem.enableDepthTest();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
-            // ВЫКЛЮЧАЕМ РЕЖИМ СВЕЧЕНИЯ
-            RenderSystem.defaultBlendFunc();
+        poseStack.popPose();
+        Minecraft.getInstance().gameRenderer.resetProjectionMatrix(event.getProjectionMatrix());
+    }
 
-            // === ВАЖНЫЕ СБРОСЫ НАСТРОЕК ===
+    /**
+     * Рисует серо-голубой скайбокс поверх неба — закрывает небо и звёзды во время шторма
+     */
+    private static void renderStormSkyFog(PoseStack poseStack, Tesselator tesselator,
+                                          BufferBuilder bufferbuilder, float progress) {
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
-            // 1. Возвращаем запись глубины (чтобы блоки не просвечивали)
-            RenderSystem.depthMask(true);
+        float r = 0.48f, g = 0.55f, b = 0.63f;
+        float alpha = Mth.clamp(progress * 0.92f, 0f, 0.92f);
 
-            // 2. Отключаем смешивание прозрачности
-            RenderSystem.disableBlend();
+        float depth = 150.0F;
 
-            // 3. Включаем тест глубины (важно для блоков)
-            RenderSystem.enableDepthTest();
+        for (int i = 0; i < 6; ++i) {
+            poseStack.pushPose();
+            if (i == 1) poseStack.mulPose(Axis.XP.rotationDegrees(90.0F));
+            if (i == 2) poseStack.mulPose(Axis.XP.rotationDegrees(-90.0F));
+            if (i == 3) poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+            if (i == 4) poseStack.mulPose(Axis.YP.rotationDegrees(90.0F));
+            if (i == 5) poseStack.mulPose(Axis.YP.rotationDegrees(-90.0F));
 
-            // 4. !!! ВОТ ЧЕГО НЕ ХВАТАЛО !!!
-            // Сбрасываем цвет и прозрачность на 100%. Иначе блоки будут прозрачными.
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+            Matrix4f matrix4f = poseStack.last().pose();
+            bufferbuilder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+            bufferbuilder.vertex(matrix4f, -depth, -depth, -depth).color(r, g, b, alpha).endVertex();
+            bufferbuilder.vertex(matrix4f,  depth, -depth, -depth).color(r, g, b, alpha).endVertex();
+            bufferbuilder.vertex(matrix4f,  depth,  depth, -depth).color(r, g, b, alpha).endVertex();
+            bufferbuilder.vertex(matrix4f, -depth,  depth, -depth).color(r, g, b, alpha).endVertex();
+            tesselator.end();
 
             poseStack.popPose();
-            Minecraft.getInstance().gameRenderer.resetProjectionMatrix(event.getProjectionMatrix());
         }
     }
 
@@ -131,15 +158,14 @@ public class ThaloriaSkyRenderer {
         return start + t * (end - start);
     }
 
-    private static void renderGlobalHorizon(PoseStack poseStack, Tesselator tesselator, BufferBuilder bufferbuilder, float timeOfDay) {
-        float sunHeight = (float) Math.cos(timeOfDay * Math.PI * 2.0D);
+    private static void renderGlobalHorizon(PoseStack poseStack, Tesselator tesselator,
+                                            BufferBuilder bufferbuilder, float timeOfDay) {
+        float sunHeight = (float)Math.cos(timeOfDay * Math.PI * 2.0D);
         float distFromHorizon = Math.abs(sunHeight);
 
         if (distFromHorizon < 0.4f) {
             float alpha = (0.4f - distFromHorizon) / 0.4f;
-            float r = 0.8F;
-            float g = 0.05F;
-            float b = 0.05F;
+            float r = 0.8F, g = 0.05F, b = 0.05F;
 
             RenderSystem.setShader(GameRenderer::getPositionColorShader);
             RenderSystem.disableCull();
@@ -157,8 +183,7 @@ public class ThaloriaSkyRenderer {
                 float angle = (float)i * ((float)Math.PI * 2F) / segments;
                 float x = (float)Math.sin(angle) * radius;
                 float z = (float)Math.cos(angle) * radius;
-
-                bufferbuilder.vertex(matrix4f, x, heightUp, z).color(r, g, b, 0.0F).endVertex();
+                bufferbuilder.vertex(matrix4f, x, heightUp,   z).color(r, g, b, 0.0F).endVertex();
                 bufferbuilder.vertex(matrix4f, x, heightDown, z).color(r, g, b, alpha * 0.6F).endVertex();
             }
             tesselator.end();
@@ -167,28 +192,24 @@ public class ThaloriaSkyRenderer {
         }
     }
 
-    private static void renderSunAura(PoseStack poseStack, Tesselator tesselator, BufferBuilder bufferbuilder, float timeOfDay, Camera camera) {
-        float sunHeight = (float) Math.cos(timeOfDay * Math.PI * 2.0D);
+    private static void renderSunAura(PoseStack poseStack, Tesselator tesselator,
+                                      BufferBuilder bufferbuilder, float timeOfDay, Camera camera) {
+        float sunHeight = (float)Math.cos(timeOfDay * Math.PI * 2.0D);
         float distFromHorizon = Math.abs(sunHeight);
 
         if (distFromHorizon < 0.4f) {
             org.joml.Vector3f lookVec = new org.joml.Vector3f(camera.getLookVector()).normalize();
-            org.joml.Vector3f sunVec = new org.joml.Vector3f(
+            org.joml.Vector3f sunVec  = new org.joml.Vector3f(
                     (float)-Math.sin(timeOfDay * Math.PI * 2),
-                    (float)Math.cos(timeOfDay * Math.PI * 2),
-                    0.0f
-            ).normalize();
+                    (float) Math.cos(timeOfDay * Math.PI * 2),
+                    0.0f).normalize();
 
             float dot = lookVec.dot(sunVec);
             float lookFactor = Math.max(0.0F, (dot - 0.7F) / 0.3F);
 
-            float r = 0.4F;
-            float g = 0.0F;
-            float b = 0.0F;
-
-            r = lerpColor(lookFactor, r, 0.8F);
-            g = lerpColor(lookFactor, g, 0.4F);
-            b = lerpColor(lookFactor, b, 0.2F);
+            float r = lerpColor(lookFactor, 0.4F, 0.8F);
+            float g = lerpColor(lookFactor, 0.0F, 0.4F);
+            float b = lerpColor(lookFactor, 0.0F, 0.2F);
 
             float baseVisibility = (0.4f - distFromHorizon) / 0.4f;
             float alpha = baseVisibility * (0.5F + lookFactor * 0.5F);
@@ -201,8 +222,6 @@ public class ThaloriaSkyRenderer {
             poseStack.mulPose(Axis.XP.rotationDegrees(timeOfDay * 360.0F));
 
             Matrix4f matrix4f = poseStack.last().pose();
-            float width = 350.0F;
-            float height = 120.0F;
 
             bufferbuilder.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_COLOR);
             bufferbuilder.vertex(matrix4f, 0.0F, 95.0F, 0.0F).color(r, g, b, alpha).endVertex();
@@ -210,38 +229,36 @@ public class ThaloriaSkyRenderer {
             int segments = 64;
             for (int j = 0; j <= segments; ++j) {
                 float angle = (float)j * ((float)Math.PI * 2F) / segments;
-                float x = (float)Math.sin(angle) * width;
-                float z = (float)Math.cos(angle) * height;
+                float x = (float)Math.sin(angle) * 350.0F;
+                float z = (float)Math.cos(angle) * 120.0F;
                 bufferbuilder.vertex(matrix4f, x, 95.0F, z).color(0.0F, 0.0F, 0.0F, 0.0F).endVertex();
             }
             tesselator.end();
-
             poseStack.popPose();
             RenderSystem.enableCull();
         }
     }
 
-    // ТЕПЕРЬ ПРИНИМАЕТ ALPHA (ПРОЗРАЧНОСТЬ)
-    private static void renderCelestialObject(PoseStack poseStack, Tesselator tesselator, BufferBuilder bufferbuilder, ResourceLocation texture, float size, float alpha) {
+    private static void renderCelestialObject(PoseStack poseStack, Tesselator tesselator,
+                                              BufferBuilder bufferbuilder,
+                                              ResourceLocation texture, float size, float alpha) {
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderTexture(0, texture);
-        // Применяем альфу здесь!
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
         RenderSystem.disableCull();
 
         Matrix4f matrix4f = poseStack.last().pose();
-
         bufferbuilder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
         bufferbuilder.vertex(matrix4f, -size, 90.0F, -size).uv(0.0F, 0.0F).endVertex();
-        bufferbuilder.vertex(matrix4f, size, 90.0F, -size).uv(1.0F, 0.0F).endVertex();
-        bufferbuilder.vertex(matrix4f, size, 90.0F, size).uv(1.0F, 1.0F).endVertex();
-        bufferbuilder.vertex(matrix4f, -size, 90.0F, size).uv(0.0F, 1.0F).endVertex();
+        bufferbuilder.vertex(matrix4f,  size, 90.0F, -size).uv(1.0F, 0.0F).endVertex();
+        bufferbuilder.vertex(matrix4f,  size, 90.0F,  size).uv(1.0F, 1.0F).endVertex();
+        bufferbuilder.vertex(matrix4f, -size, 90.0F,  size).uv(0.0F, 1.0F).endVertex();
         tesselator.end();
-
         RenderSystem.enableCull();
     }
 
-    private static void renderSolidSkybox(PoseStack poseStack, Tesselator tesselator, BufferBuilder bufferbuilder, float r, float g, float b) {
+    private static void renderSolidSkybox(PoseStack poseStack, Tesselator tesselator,
+                                          BufferBuilder bufferbuilder, float r, float g, float b) {
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
 
@@ -255,19 +272,19 @@ public class ThaloriaSkyRenderer {
 
             Matrix4f matrix4f = poseStack.last().pose();
             float depth = 150.0F;
-
             bufferbuilder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
             bufferbuilder.vertex(matrix4f, -depth, -depth, -depth).color(r, g, b, 1.0F).endVertex();
-            bufferbuilder.vertex(matrix4f, depth, -depth, -depth).color(r, g, b, 1.0F).endVertex();
-            bufferbuilder.vertex(matrix4f, depth, depth, -depth).color(r, g, b, 1.0F).endVertex();
-            bufferbuilder.vertex(matrix4f, -depth, depth, -depth).color(r, g, b, 1.0F).endVertex();
+            bufferbuilder.vertex(matrix4f,  depth, -depth, -depth).color(r, g, b, 1.0F).endVertex();
+            bufferbuilder.vertex(matrix4f,  depth,  depth, -depth).color(r, g, b, 1.0F).endVertex();
+            bufferbuilder.vertex(matrix4f, -depth,  depth, -depth).color(r, g, b, 1.0F).endVertex();
             tesselator.end();
-
             poseStack.popPose();
         }
     }
 
-    private static void renderFullSkybox(PoseStack poseStack, Tesselator tesselator, BufferBuilder bufferbuilder, ResourceLocation texture, float depth, float alpha) {
+    private static void renderFullSkybox(PoseStack poseStack, Tesselator tesselator,
+                                         BufferBuilder bufferbuilder,
+                                         ResourceLocation texture, float depth, float alpha) {
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
         RenderSystem.setShaderTexture(0, texture);
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, alpha);
@@ -281,14 +298,12 @@ public class ThaloriaSkyRenderer {
             if (i == 5) poseStack.mulPose(Axis.YP.rotationDegrees(-90.0F));
 
             Matrix4f matrix4f = poseStack.last().pose();
-
             bufferbuilder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
             bufferbuilder.vertex(matrix4f, -depth, -depth, -depth).uv(0.0F, 0.0F).endVertex();
-            bufferbuilder.vertex(matrix4f, depth, -depth, -depth).uv(1.0F, 0.0F).endVertex();
-            bufferbuilder.vertex(matrix4f, depth, depth, -depth).uv(1.0F, 1.0F).endVertex();
-            bufferbuilder.vertex(matrix4f, -depth, depth, -depth).uv(0.0F, 1.0F).endVertex();
+            bufferbuilder.vertex(matrix4f,  depth, -depth, -depth).uv(1.0F, 0.0F).endVertex();
+            bufferbuilder.vertex(matrix4f,  depth,  depth, -depth).uv(1.0F, 1.0F).endVertex();
+            bufferbuilder.vertex(matrix4f, -depth,  depth, -depth).uv(0.0F, 1.0F).endVertex();
             tesselator.end();
-
             poseStack.popPose();
         }
     }

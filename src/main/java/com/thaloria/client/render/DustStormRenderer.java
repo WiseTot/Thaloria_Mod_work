@@ -2,16 +2,19 @@ package com.thaloria.client.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 import java.util.Random;
 
@@ -20,36 +23,47 @@ public class DustStormRenderer {
 
     public static boolean stormActive = false;
 
-    // Время начала шторма — для плавного нарастания и спада
-    private static long stormStartTime  = 0;
-    private static long stormEndTime    = 0;
-    private static boolean wasActive    = false;
+    private static long stormStartTime = 0;
+    private static long stormEndTime   = 0;
+    private static final long FADE_MS  = 4000;
 
-    // Fade in/out — 5 секунд
-    private static final long FADE_MS = 5000;
+    // Частицы — позиции в МИРОВОМ пространстве относительно спавна
+    // Обновляем каждый кадр сдвигая по ветру
+    private static final int   PARTICLE_COUNT = 500;
+    private static final Random rng = new Random(99887);
 
-    // Частицы пыли
-    private static final int PARTICLE_COUNT = 200;
-    private static final Random rng = new Random(12345);
-    private static final float[] PX = new float[PARTICLE_COUNT];
-    private static final float[] PY = new float[PARTICLE_COUNT];
-    private static final float[] PZ = new float[PARTICLE_COUNT];
+    // Мировые смещения частиц (относительно позиции игрока при старте)
+    private static final float[] WX    = new float[PARTICLE_COUNT];
+    private static final float[] WY    = new float[PARTICLE_COUNT];
+    private static final float[] WZ    = new float[PARTICLE_COUNT];
     private static final float[] SPEED = new float[PARTICLE_COUNT];
     private static final float[] SIZE  = new float[PARTICLE_COUNT];
 
+    // Радиус облака частиц вокруг игрока
+    private static final float RADIUS_H = 60f; // горизонтальный
+    private static final float RADIUS_V = 15f; // вертикальный
+
     static {
-        // Инициализируем случайные позиции частиц вокруг игрока
-        for (int i = 0; i < PARTICLE_COUNT; i++) {
-            resetParticle(i);
-        }
+        for (int i = 0; i < PARTICLE_COUNT; i++) spawnParticle(i);
     }
 
-    private static void resetParticle(int i) {
-        PX[i] = (rng.nextFloat() - 0.5f) * 40f;
-        PY[i] = (rng.nextFloat() - 0.5f) * 20f;
-        PZ[i] = (rng.nextFloat() - 0.5f) * 40f;
-        SPEED[i] = 0.02f + rng.nextFloat() * 0.05f;
-        SIZE[i]  = 0.05f + rng.nextFloat() * 0.15f;
+    private static void spawnParticle(int i) {
+        // Случайная позиция в большом объёме вокруг игрока
+        WX[i] = (rng.nextFloat() - 0.5f) * RADIUS_H * 2f;
+        WY[i] = (rng.nextFloat() - 0.5f) * RADIUS_V * 2f;
+        WZ[i] = (rng.nextFloat() - 0.5f) * RADIUS_H * 2f;
+        // Скорость ветра — быстро
+        SPEED[i] = 0.3f + rng.nextFloat() * 0.5f;
+        SIZE[i]  = 0.08f + rng.nextFloat() * 0.20f;
+    }
+
+    private static void respawnBehind(int i) {
+        // Появляется с наветренной стороны (X-)
+        WX[i] = -RADIUS_H + (rng.nextFloat() - 0.5f) * 10f;
+        WY[i] = (rng.nextFloat() - 0.5f) * RADIUS_V * 2f;
+        WZ[i] = (rng.nextFloat() - 0.5f) * RADIUS_H * 2f;
+        SPEED[i] = 0.3f + rng.nextFloat() * 0.5f;
+        SIZE[i]  = 0.08f + rng.nextFloat() * 0.20f;
     }
 
     public static void setStormActive(boolean active) {
@@ -60,54 +74,46 @@ public class DustStormRenderer {
             stormEndTime = System.currentTimeMillis();
         }
         stormActive = active;
-        wasActive   = active;
     }
 
-    /** Альфа с учётом fade in/out */
-    private static float getAlpha(float maxAlpha) {
+    public static float getProgress() {
         long now = System.currentTimeMillis();
-        float alpha = maxAlpha;
-
         if (stormActive && stormStartTime > 0) {
             long elapsed = now - stormStartTime;
-            if (elapsed < FADE_MS) {
-                alpha *= (float) elapsed / FADE_MS;
-            }
+            if (elapsed < FADE_MS) return (float) elapsed / FADE_MS;
+            return 1f;
         } else if (!stormActive && stormEndTime > 0) {
             long elapsed = now - stormEndTime;
-            if (elapsed < FADE_MS) {
-                alpha *= 1f - (float) elapsed / FADE_MS;
-            } else {
-                // Fade закончился
-                stormEndTime = 0;
-                return 0f;
-            }
-        } else if (!stormActive) {
+            if (elapsed < FADE_MS) return 1f - (float) elapsed / FADE_MS;
             return 0f;
         }
-
-        return alpha;
+        return stormActive ? 1f : 0f;
     }
 
-    /** Рендер частиц пыли в мире */
+    public static boolean isThaloriaLevel() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.level != null && mc.level.dimension().location()
+                .toString().equals("thaloria:thaloria_planet");
+    }
+
+    // ── Частицы пыли в мире ──────────────────────────────────────
+
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) return;
 
-        float alpha = getAlpha(0.4f);
-        if (alpha <= 0f) return;
+        float progress = getProgress();
+        if (progress <= 0f) return;
+        if (!isThaloriaLevel()) return;
 
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || mc.player == null) return;
+        if (mc.player == null) return;
 
-        // Только в измерении Талории
-        if (!mc.level.dimension().location()
-                .toString().equals("thaloria:thaloria_planet")) return;
+        Camera camera = mc.gameRenderer.getMainCamera();
+        Vec3 camPos = camera.getPosition();
 
-        long time = mc.level.getGameTime();
+        // Получаем матрицу вида и инвертируем её чтобы рисовать в world space
         PoseStack poseStack = event.getPoseStack();
-
-        Vec3 cam = mc.gameRenderer.getMainCamera().getPosition();
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
@@ -119,39 +125,44 @@ public class DustStormRenderer {
         BufferBuilder builder = Tesselator.getInstance().getBuilder();
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
 
+        // Направление ветра в мировом пространстве — строго по оси X
+        float windX = 0.35f;
+        float windZ = 0.08f;
+
         for (int i = 0; i < PARTICLE_COUNT; i++) {
-            // Двигаем частицу по ветру
-            PX[i] += SPEED[i] * 1.5f;
-            PY[i] += SPEED[i] * 0.1f;
-            PZ[i] += SPEED[i] * 0.3f;
+            // Двигаем частицу по ветру в мировом пространстве
+            WX[i] += SPEED[i] * windX;
+            WZ[i] += SPEED[i] * windZ;
+            WY[i] -= SPEED[i] * 0.01f; // чуть оседает
 
-            // Если улетела далеко — сбрасываем
-            if (PX[i] > 20f) {
-                PX[i] = -20f;
-                PY[i] = (rng.nextFloat() - 0.5f) * 20f;
-                PZ[i] = (rng.nextFloat() - 0.5f) * 40f;
-            }
+            // Если вышла за радиус — появляется с другой стороны
+            if (WX[i] > RADIUS_H) respawnBehind(i);
+            if (WY[i] < -RADIUS_V) WY[i] = RADIUS_V;
 
-            float x = (float)(PX[i] - cam.x % 40);
-            float y = (float)(PY[i] - cam.y % 20);
-            float z = (float)(PZ[i] - cam.z % 40);
+            // Позиция частицы относительно камеры (camera space)
+            float rx = (float)(WX[i]);
+            float ry = (float)(WY[i]);
+            float rz = (float)(WZ[i]);
+
             float s = SIZE[i];
+            float stretch = SPEED[i] * 2.0f;
 
-            // Цвет пыли — оранжево-коричневый
-            float r = 0.75f + rng.nextFloat() * 0.15f;
-            float g = 0.45f + rng.nextFloat() * 0.15f;
-            float b = 0.15f;
-            float a = alpha * (0.4f + rng.nextFloat() * 0.4f);
+            // Серо-голубой цвет
+            float r = 0.52f + rng.nextFloat() * 0.08f;
+            float g = 0.60f + rng.nextFloat() * 0.08f;
+            float b = 0.68f + rng.nextFloat() * 0.08f;
+            float a = progress * (0.40f + rng.nextFloat() * 0.35f);
 
-            poseStack.pushPose();
+            // Рисуем частицу как горизонтальную полоску в camera space
+            // Но ориентируем её по реальному направлению ветра в мире
+            // Для этого проецируем вектор ветра на плоскость экрана
             var pose = poseStack.last().pose();
 
-            builder.vertex(pose, x - s, y - s, z).color(r, g, b, a).endVertex();
-            builder.vertex(pose, x + s, y - s, z).color(r, g, b, a).endVertex();
-            builder.vertex(pose, x + s, y + s, z).color(r, g, b, a).endVertex();
-            builder.vertex(pose, x - s, y + s, z).color(r, g, b, a).endVertex();
-
-            poseStack.popPose();
+            // Полоска вытянута по X (направление ветра) с fade на хвосте
+            builder.vertex(pose, rx - stretch, ry - s * 0.4f, rz).color(r, g, b, a * 0.15f).endVertex();
+            builder.vertex(pose, rx + s,       ry - s * 0.4f, rz).color(r, g, b, a).endVertex();
+            builder.vertex(pose, rx + s,       ry + s * 0.4f, rz).color(r, g, b, a).endVertex();
+            builder.vertex(pose, rx - stretch, ry + s * 0.4f, rz).color(r, g, b, a * 0.15f).endVertex();
         }
 
         Tesselator.getInstance().end();
@@ -162,26 +173,49 @@ public class DustStormRenderer {
         RenderSystem.disableBlend();
     }
 
-    /** Накладываем затемнение + оранжевый оверлей на экран во время шторма */
+    // ── Цвет и плотность тумана ──────────────────────────────────
+
+    @SubscribeEvent
+    public static void onFogColor(ViewportEvent.ComputeFogColor event) {
+        float progress = getProgress();
+        if (progress <= 0f) return;
+        if (!isThaloriaLevel()) return;
+
+        float stormR = 0.48f, stormG = 0.55f, stormB = 0.63f;
+        event.setRed(Mth.lerp(progress,   (float)event.getRed(),   stormR));
+        event.setGreen(Mth.lerp(progress, (float)event.getGreen(), stormG));
+        event.setBlue(Mth.lerp(progress,  (float)event.getBlue(),  stormB));
+    }
+
+    @SubscribeEvent
+    public static void onFogDensity(ViewportEvent.RenderFog event) {
+        float progress = getProgress();
+        if (progress <= 0f) return;
+        if (!isThaloriaLevel()) return;
+
+        float normalFar = event.getFarPlaneDistance();
+        float stormFar  = Mth.lerp(progress, normalFar, 8f);
+        event.setFarPlaneDistance(stormFar);
+        event.setNearPlaneDistance(0f);
+        event.setCanceled(true);
+    }
+
+    // ── Оверлей ───────────────────────────────────────────────────
+
     @SubscribeEvent
     public static void onRenderGui(RenderGuiOverlayEvent.Pre event) {
         if (event.getOverlay() != VanillaGuiOverlay.VIGNETTE.type()) return;
 
-        float alpha = getAlpha(0.55f);
-        if (alpha <= 0f) return;
+        float progress = getProgress();
+        if (progress <= 0f) return;
+        if (!isThaloriaLevel()) return;
 
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return;
-        if (!mc.level.dimension().location()
-                .toString().equals("thaloria:thaloria_planet")) return;
+        int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        int screenH = Minecraft.getInstance().getWindow().getGuiScaledHeight();
 
-        int screenW = mc.getWindow().getGuiScaledWidth();
-        int screenH = mc.getWindow().getGuiScaledHeight();
-
-        // Пульсация — лёгкое мерцание
         long now = System.currentTimeMillis();
-        float pulse = (float)(Math.sin(now * 0.002) * 0.05);
-        float finalAlpha = Mth.clamp(alpha + pulse, 0f, 0.7f);
+        float pulse = (float)(Math.sin(now * 0.0015) * 0.03);
+        float alpha = Mth.clamp(progress * 0.22f + pulse, 0f, 0.35f);
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
@@ -190,12 +224,11 @@ public class DustStormRenderer {
         BufferBuilder builder = Tesselator.getInstance().getBuilder();
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
 
-        // Оранжево-коричневый туман
-        float r = 0.55f, g = 0.30f, b = 0.05f;
-        builder.vertex(0,       0,       0).color(r, g, b, finalAlpha).endVertex();
-        builder.vertex(0,       screenH, 0).color(r, g, b, finalAlpha).endVertex();
-        builder.vertex(screenW, screenH, 0).color(r, g, b, finalAlpha).endVertex();
-        builder.vertex(screenW, 0,       0).color(r, g, b, finalAlpha).endVertex();
+        float r = 0.48f, g = 0.55f, b = 0.63f;
+        builder.vertex(0,       0,       0).color(r, g, b, alpha).endVertex();
+        builder.vertex(0,       screenH, 0).color(r, g, b, alpha).endVertex();
+        builder.vertex(screenW, screenH, 0).color(r, g, b, alpha).endVertex();
+        builder.vertex(screenW, 0,       0).color(r, g, b, alpha).endVertex();
 
         Tesselator.getInstance().end();
         RenderSystem.disableBlend();
