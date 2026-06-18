@@ -46,8 +46,22 @@ public class DomeZone {
         return active;
     }
 
-    public float calculatePressureDelta() {
-        float gain = (filters.size() * 100f) / volume;
+    public float calculatePressureDelta(net.minecraft.server.level.ServerLevel level) {
+        // Считаем только активные (питаемые) фильтры
+        int activeFilers = 0;
+        for (BlockPos filterPos : filters) {
+            if (level.getBlockEntity(filterPos) instanceof
+                    com.thaloria.block.entity.AtmosphereFilterBlockEntity filter) {
+                if (filter.isPowered) activeFilers++;
+            }
+        }
+
+        if (activeFilers == 0) {
+            // Нет питания — давление падает
+            return -5f;
+        }
+
+        float gain = (activeFilers * 100f) / volume;
         float loss = (breaches.size() * 50f) / volume;
         return gain - loss;
     }

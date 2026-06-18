@@ -47,7 +47,7 @@ public class AtmosphereFilterBlock extends BaseEntityBlock {
             int shellCount = zone != null ? zone.originalShell.size() : 0;
             int breachCount = zone != null ? zone.breaches.size() : 0;
             float pressure = zone != null ? zone.pressure : 0f;
-            float pressureDelta = zone != null ? zone.calculatePressureDelta() : 0f;
+            float pressureDelta = zone != null ? zone.calculatePressureDelta(serverLevel) : 0f;
             int filterCount = zone != null ? zone.filters.size() : 0;
 
             // Отправляем пакет клиенту чтобы открыть экран

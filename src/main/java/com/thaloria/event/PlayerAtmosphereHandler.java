@@ -53,7 +53,7 @@ public class PlayerAtmosphereHandler {
                 }
 
                 // Обычный пересчёт
-                float delta = zone.calculatePressureDelta();
+                float delta = zone.calculatePressureDelta(level);
                 zone.pressure = Math.max(0f, Math.min(100f, zone.pressure + delta));
 
                 for (UUID playerId : zone.playersInside) {
@@ -97,10 +97,22 @@ public class PlayerAtmosphereHandler {
                 AtmosphereManager.setPressure(player, currentZone.pressure);
                 data.setDirty();
             } else {
+                // Вышел из купола — давление мгновенно 0
                 AtmosphereManager.setPressure(player, 0f);
+                AtmosphereManager.setBreath(player, 0);
             }
 
             setPreviousZoneId(player, currentZone != null ? currentZone.id : null);
+        }
+
+        // Каждый тик синхронизируем давление игрока с зоной
+        // (чтобы падение давления зоны отражалось на игроке)
+        if (currentZone != null) {
+            AtmosphereManager.setPressure(player, currentZone.pressure);
+        } else {
+            // Снаружи — всегда 0
+            float current = AtmosphereManager.getPressure(player);
+            if (current > 0f) AtmosphereManager.setPressure(player, 0f);
         }
 
         if (player.tickCount % 20 != 0) return;

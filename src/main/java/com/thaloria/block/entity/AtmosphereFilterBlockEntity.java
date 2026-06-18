@@ -34,26 +34,40 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         boolean wasPowered = isPowered;
         isPowered = checkPower(serverLevel);
 
-        if (isPowered && !wasPowered) {
-            startScan(serverLevel);
-        }
-
+        // Питание пропало — давление зоны начинает падать
         if (!isPowered && wasPowered) {
-            removeSelfFromZone(serverLevel);
+            if (zoneId != null) {
+                DomeZoneSavedData data = DomeZoneSavedData.get(serverLevel);
+                DomeZone zone = data.getZone(zoneId);
+                if (zone != null) {
+                    zone.filters.remove(this.getBlockPos());
+                    data.setDirty();
+                }
+            }
+            return;
         }
 
-        if (isPowered && zoneId != null && !isScanning) {
+        if (isPowered && !wasPowered && zoneId != null) {
             DomeZoneSavedData data = DomeZoneSavedData.get(serverLevel);
-            if (data.getZone(zoneId) == null) {
-                zoneId = null;
-                setChanged();
-            } else {
-                consumeGeneratorEnergy(serverLevel);
+            DomeZone zone = data.getZone(zoneId);
+            if (zone != null && !zone.filters.contains(this.getBlockPos())) {
+                zone.filters.add(this.getBlockPos());
+                data.setDirty();
             }
         }
 
-        if (isPowered && zoneId == null && !isScanning) {
-            startScan(serverLevel);
+        if (isPowered) {
+            DomeZoneSavedData data = DomeZoneSavedData.get(serverLevel);
+            if (zoneId != null && data.getZone(zoneId) == null) {
+                zoneId = null;
+                setChanged();
+            }
+
+            if (zoneId == null && !isScanning) {
+                startScan(serverLevel);
+            } else {
+                consumeGeneratorEnergy(serverLevel);
+            }
         }
     }
 
@@ -111,13 +125,19 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         isScanning = true;
         scanProgress = 0;
 
+        // Сохраняем давление если зона уже была
         float savedPressure = 0f;
+        boolean alreadyHasBaseline = false;
         DomeZoneSavedData data = DomeZoneSavedData.get(level);
         if (zoneId != null) {
             DomeZone existing = data.getZone(zoneId);
-            if (existing != null) savedPressure = existing.pressure;
+            if (existing != null) {
+                savedPressure = existing.pressure;
+                alreadyHasBaseline = existing.hasBaseline;
+            }
         }
         final float pressureToRestore = savedPressure;
+        final boolean keepBaseline = alreadyHasBaseline;
 
         removeSelfFromZone(level);
 
@@ -142,6 +162,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         existingZone.filters.add(originPos);
                         existingZone.volume = (existingZone.volume + result.volume) / 2f;
 
+                        // Если у существующей зоны уже есть baseline — НЕ перезаписываем
                         if (!existingZone.hasBaseline) {
                             for (BlockPos shellPos : result.shell) {
                                 if (DomeScanTask.isDomeBlock(levelRef.getBlockState(shellPos))) {
@@ -153,39 +174,33 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
                         zoneId = existingZone.id;
                         dataRef.setDirty();
-
-                        levelRef.getServer().sendSystemMessage(
-                                net.minecraft.network.chat.Component.literal(
-                                        "[Thaloria] Filter joined zone! Filters=" +
-                                                existingZone.filters.size() +
-                                                " Shell=" + existingZone.originalShell.size() +
-                                                " hasBaseline=" + existingZone.hasBaseline
-                                )
-                        );
                     } else {
                         DomeZone zone = new DomeZone(UUID.randomUUID());
                         zone.filters.add(originPos);
-
-                        Set<BlockPos> allDomeBlocks = DomeScanTask.collectAllDomeBlocks(
-                                levelRef, originPos, radius);
-                        zone.originalShell.addAll(allDomeBlocks);
-
                         zone.volume = result.volume;
                         zone.scanRadius = radius;
                         zone.isScanning = false;
-                        zone.hasBaseline = true;
                         zone.pressure = pressureToRestore;
+
+                        // Если baseline уже был (перезагрузка мира) — НЕ строим новый
+                        // Baseline строится только через Update Baseline вручную
+                        if (!keepBaseline) {
+                            Set<BlockPos> allDomeBlocks = DomeScanTask.collectAllDomeBlocks(
+                                    levelRef, originPos, radius);
+                            zone.originalShell.addAll(allDomeBlocks);
+                            zone.hasBaseline = true;
+                        }
+                        // Если keepBaseline=true но originalShell пустой —
+                        // значит зона была удалена, строим baseline заново
+                        if (zone.originalShell.isEmpty()) {
+                            Set<BlockPos> allDomeBlocks = DomeScanTask.collectAllDomeBlocks(
+                                    levelRef, originPos, radius);
+                            zone.originalShell.addAll(allDomeBlocks);
+                            zone.hasBaseline = true;
+                        }
 
                         dataRef.addZone(zone);
                         zoneId = zone.id;
-
-                        levelRef.getServer().sendSystemMessage(
-                                net.minecraft.network.chat.Component.literal(
-                                        "[Thaloria] New zone! Shell=" + zone.originalShell.size() +
-                                                " Volume=" + (int)zone.volume +
-                                                " Pressure restored=" + (int)pressureToRestore
-                                )
-                        );
                     }
 
                     isScanning = false;
