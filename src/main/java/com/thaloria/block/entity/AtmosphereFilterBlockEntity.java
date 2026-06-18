@@ -174,6 +174,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
                         zoneId = existingZone.id;
                         dataRef.setDirty();
+                        existingZone.recalculateBreaches(levelRef);
                     } else {
                         DomeZone zone = new DomeZone(UUID.randomUUID());
                         zone.filters.add(originPos);
@@ -201,6 +202,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
                         dataRef.addZone(zone);
                         zoneId = zone.id;
+                        zone.recalculateBreaches(levelRef);
                     }
 
                     isScanning = false;
