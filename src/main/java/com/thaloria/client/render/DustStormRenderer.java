@@ -2,7 +2,6 @@ package com.thaloria.client.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
-import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.util.Mth;
@@ -13,8 +12,6 @@ import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import org.joml.Matrix4f;
-import org.joml.Vector3f;
 
 import java.util.Random;
 
@@ -22,54 +19,55 @@ import java.util.Random;
 public class DustStormRenderer {
 
     public static boolean stormActive = false;
-
     private static long stormStartTime = 0;
     private static long stormEndTime   = 0;
     private static final long FADE_MS  = 4000;
 
-    // Частицы — позиции в МИРОВОМ пространстве относительно спавна
-    // Обновляем каждый кадр сдвигая по ветру
-    private static final int   PARTICLE_COUNT = 500;
-    private static final Random rng = new Random(99887);
+    private static final int   PARTICLE_COUNT = 600;
+    private static final Random rng = new Random(55443);
 
-    // Мировые смещения частиц (относительно позиции игрока при старте)
-    private static final float[] WX    = new float[PARTICLE_COUNT];
-    private static final float[] WY    = new float[PARTICLE_COUNT];
-    private static final float[] WZ    = new float[PARTICLE_COUNT];
-    private static final float[] SPEED = new float[PARTICLE_COUNT];
-    private static final float[] SIZE  = new float[PARTICLE_COUNT];
+    // Абсолютные мировые координаты частиц
+    // Инициализируются при первом кадре относительно позиции игрока
+    private static final double[] WX   = new double[PARTICLE_COUNT];
+    private static final double[] WY   = new double[PARTICLE_COUNT];
+    private static final double[] WZ   = new double[PARTICLE_COUNT];
+    private static final float[]  SPEED = new float[PARTICLE_COUNT];
+    private static final float[]  LEN   = new float[PARTICLE_COUNT]; // длина полоски
 
-    // Радиус облака частиц вокруг игрока
-    private static final float RADIUS_H = 60f; // горизонтальный
-    private static final float RADIUS_V = 15f; // вертикальный
+    private static boolean initialized = false;
 
-    static {
-        for (int i = 0; i < PARTICLE_COUNT; i++) spawnParticle(i);
+    private static final double RADIUS_H = 40.0;
+    private static final double RADIUS_V = 10.0;
+
+    // Направление ветра (мировые оси, не зависит от камеры)
+    private static final double WIND_X = 1.0;
+    private static final double WIND_Z = 0.15;
+
+    private static void init(Vec3 origin) {
+        for (int i = 0; i < PARTICLE_COUNT; i++) {
+            WX[i] = origin.x + (rng.nextDouble() - 0.5) * RADIUS_H * 2;
+            WY[i] = origin.y + (rng.nextDouble() - 0.5) * RADIUS_V * 2;
+            WZ[i] = origin.z + (rng.nextDouble() - 0.5) * RADIUS_H * 2;
+            SPEED[i] = 0.6f + rng.nextFloat() * 0.8f;
+            LEN[i]   = 0.4f + rng.nextFloat() * 0.8f;
+        }
+        initialized = true;
     }
 
-    private static void spawnParticle(int i) {
-        // Случайная позиция в большом объёме вокруг игрока
-        WX[i] = (rng.nextFloat() - 0.5f) * RADIUS_H * 2f;
-        WY[i] = (rng.nextFloat() - 0.5f) * RADIUS_V * 2f;
-        WZ[i] = (rng.nextFloat() - 0.5f) * RADIUS_H * 2f;
-        // Скорость ветра — быстро
-        SPEED[i] = 0.3f + rng.nextFloat() * 0.5f;
-        SIZE[i]  = 0.08f + rng.nextFloat() * 0.20f;
-    }
-
-    private static void respawnBehind(int i) {
+    private static void respawn(int i, Vec3 playerPos) {
         // Появляется с наветренной стороны (X-)
-        WX[i] = -RADIUS_H + (rng.nextFloat() - 0.5f) * 10f;
-        WY[i] = (rng.nextFloat() - 0.5f) * RADIUS_V * 2f;
-        WZ[i] = (rng.nextFloat() - 0.5f) * RADIUS_H * 2f;
-        SPEED[i] = 0.3f + rng.nextFloat() * 0.5f;
-        SIZE[i]  = 0.08f + rng.nextFloat() * 0.20f;
+        WX[i] = playerPos.x - RADIUS_H + (rng.nextDouble() - 0.5) * 4;
+        WY[i] = playerPos.y + (rng.nextDouble() - 0.5) * RADIUS_V * 2;
+        WZ[i] = playerPos.z + (rng.nextDouble() - 0.5) * RADIUS_H * 2;
+        SPEED[i] = 0.6f + rng.nextFloat() * 0.8f;
+        LEN[i]   = 0.4f + rng.nextFloat() * 0.8f;
     }
 
     public static void setStormActive(boolean active) {
         if (active && !stormActive) {
             stormStartTime = System.currentTimeMillis();
             stormEndTime   = 0;
+            initialized    = false; // переинициализируем вокруг игрока
         } else if (!active && stormActive) {
             stormEndTime = System.currentTimeMillis();
         }
@@ -96,11 +94,9 @@ public class DustStormRenderer {
                 .toString().equals("thaloria:thaloria_planet");
     }
 
-    // ── Частицы пыли в мире ──────────────────────────────────────
-
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) return;
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
 
         float progress = getProgress();
         if (progress <= 0f) return;
@@ -109,10 +105,30 @@ public class DustStormRenderer {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
-        Camera camera = mc.gameRenderer.getMainCamera();
-        Vec3 camPos = camera.getPosition();
+        Vec3 camPos    = mc.gameRenderer.getMainCamera().getPosition();
+        Vec3 playerPos = mc.player.position();
 
-        // Получаем матрицу вида и инвертируем её чтобы рисовать в world space
+        if (!initialized) init(playerPos);
+
+        // Двигаем частицы по ветру
+        for (int i = 0; i < PARTICLE_COUNT; i++) {
+            WX[i] += SPEED[i] * WIND_X * 0.35;
+            WZ[i] += SPEED[i] * WIND_Z * 0.35;
+            WY[i] -= SPEED[i] * 0.005;
+
+            // Если улетела дальше RADIUS_H от игрока — респавним с другой стороны
+            double dx = WX[i] - playerPos.x;
+            double dz = WZ[i] - playerPos.z;
+            double dy = WY[i] - playerPos.y;
+
+            if (dx > RADIUS_H || Math.abs(dz) > RADIUS_H) {
+                respawn(i, playerPos);
+            }
+            if (Math.abs(dy) > RADIUS_V) {
+                WY[i] = playerPos.y + (rng.nextDouble() - 0.5) * RADIUS_V * 2;
+            }
+        }
+
         PoseStack poseStack = event.getPoseStack();
 
         RenderSystem.enableBlend();
@@ -125,44 +141,35 @@ public class DustStormRenderer {
         BufferBuilder builder = Tesselator.getInstance().getBuilder();
         builder.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
 
-        // Направление ветра в мировом пространстве — строго по оси X
-        float windX = 0.35f;
-        float windZ = 0.08f;
-
         for (int i = 0; i < PARTICLE_COUNT; i++) {
-            // Двигаем частицу по ветру в мировом пространстве
-            WX[i] += SPEED[i] * windX;
-            WZ[i] += SPEED[i] * windZ;
-            WY[i] -= SPEED[i] * 0.01f; // чуть оседает
+            // Позиция частицы относительно камеры — это и есть координаты в camera space
+            // потому что poseStack в AFTER_TRANSLUCENT_BLOCKS уже имеет только translation камеры
+            float rx = (float)(WX[i] - camPos.x);
+            float ry = (float)(WY[i] - camPos.y);
+            float rz = (float)(WZ[i] - camPos.z);
 
-            // Если вышла за радиус — появляется с другой стороны
-            if (WX[i] > RADIUS_H) respawnBehind(i);
-            if (WY[i] < -RADIUS_V) WY[i] = RADIUS_V;
+            // Длина частицы вдоль оси ветра в мировых координатах
+            float len  = LEN[i] * SPEED[i];
+            float thick = 0.04f + LEN[i] * 0.03f;
 
-            // Позиция частицы относительно камеры (camera space)
-            float rx = (float)(WX[i]);
-            float ry = (float)(WY[i]);
-            float rz = (float)(WZ[i]);
+            // Хвост частицы — смещаем назад по оси X (против ветра)
+            float tx = rx - (float)(len * WIND_X);
+            float tz = rz - (float)(len * WIND_Z);
 
-            float s = SIZE[i];
-            float stretch = SPEED[i] * 2.0f;
+            // Серо-голубой цвет пыли Талории
+            float r = 0.52f + rng.nextFloat() * 0.06f;
+            float g = 0.60f + rng.nextFloat() * 0.06f;
+            float b = 0.68f + rng.nextFloat() * 0.06f;
+            float a = progress * (0.55f + rng.nextFloat() * 0.30f);
 
-            // Серо-голубой цвет
-            float r = 0.52f + rng.nextFloat() * 0.08f;
-            float g = 0.60f + rng.nextFloat() * 0.08f;
-            float b = 0.68f + rng.nextFloat() * 0.08f;
-            float a = progress * (0.40f + rng.nextFloat() * 0.35f);
-
-            // Рисуем частицу как горизонтальную полоску в camera space
-            // Но ориентируем её по реальному направлению ветра в мире
-            // Для этого проецируем вектор ветра на плоскость экрана
             var pose = poseStack.last().pose();
 
-            // Полоска вытянута по X (направление ветра) с fade на хвосте
-            builder.vertex(pose, rx - stretch, ry - s * 0.4f, rz).color(r, g, b, a * 0.15f).endVertex();
-            builder.vertex(pose, rx + s,       ry - s * 0.4f, rz).color(r, g, b, a).endVertex();
-            builder.vertex(pose, rx + s,       ry + s * 0.4f, rz).color(r, g, b, a).endVertex();
-            builder.vertex(pose, rx - stretch, ry + s * 0.4f, rz).color(r, g, b, a * 0.15f).endVertex();
+            // Голова (яркая) → хвост (прозрачный)
+            // Полоска горизонтальная, вытянута по вектору ветра (X, Z)
+            builder.vertex(pose, tx,        ry - thick, tz       ).color(r, g, b, a * 0.05f).endVertex();
+            builder.vertex(pose, rx,        ry - thick, rz       ).color(r, g, b, a).endVertex();
+            builder.vertex(pose, rx,        ry + thick, rz       ).color(r, g, b, a).endVertex();
+            builder.vertex(pose, tx,        ry + thick, tz       ).color(r, g, b, a * 0.05f).endVertex();
         }
 
         Tesselator.getInstance().end();
@@ -172,8 +179,6 @@ public class DustStormRenderer {
         RenderSystem.enableCull();
         RenderSystem.disableBlend();
     }
-
-    // ── Цвет и плотность тумана ──────────────────────────────────
 
     @SubscribeEvent
     public static void onFogColor(ViewportEvent.ComputeFogColor event) {
@@ -199,8 +204,6 @@ public class DustStormRenderer {
         event.setNearPlaneDistance(0f);
         event.setCanceled(true);
     }
-
-    // ── Оверлей ───────────────────────────────────────────────────
 
     @SubscribeEvent
     public static void onRenderGui(RenderGuiOverlayEvent.Pre event) {
