@@ -229,11 +229,9 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
         if (zone != null) {
             zone.filters.remove(this.getBlockPos());
-            if (zone.filters.isEmpty()) {
-                data.removeZone(zoneId);
-            } else {
-                data.setDirty();
-            }
+            // НЕ удаляем зону — давление будет падать постепенно через тик
+            // Зона удалится сама когда давление упадёт до 0
+            data.setDirty();
         }
 
         zoneId = null;

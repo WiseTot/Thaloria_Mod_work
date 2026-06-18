@@ -31,10 +31,15 @@ public class PlayerAtmosphereHandler {
 
             // Удаляем мёртвые зоны (без фильтров и с нулевым давлением)
             data.removeZoneIf(zone -> {
+                // Удаляем зону только когда давление полностью упало до 0
                 if (zone.filters.isEmpty() && zone.pressure <= 0f) {
                     zone.playersInside.forEach(id -> {
                         ServerPlayer p = level.getServer().getPlayerList().getPlayer(id);
-                        if (p != null) AtmosphereManager.setPressure(p, 0f);
+                        if (p != null) {
+                            AtmosphereManager.setPressure(p, 0f);
+                            // Убираем игрока из зоны в его NBT
+                            p.getPersistentData().remove("thaloria_prev_zone");
+                        }
                     });
                     return true;
                 }
