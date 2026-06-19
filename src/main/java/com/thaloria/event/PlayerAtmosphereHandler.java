@@ -29,15 +29,45 @@ public class PlayerAtmosphereHandler {
 
             DomeZoneSavedData data = DomeZoneSavedData.get(level);
 
-            // Удаляем мёртвые зоны (без фильтров и с нулевым давлением)
+            // Тикаем давление всех зон
+            for (DomeZone zone : data.getAllZones()) {
+                if (zone.isScanning) continue;
+
+                int activeFilters = 0;
+                for (BlockPos filterPos : zone.filters) {
+                    if (level.getBlockEntity(filterPos) instanceof
+                            com.thaloria.block.entity.AtmosphereFilterBlockEntity f
+                            && f.isPowered) {
+                        activeFilters++;
+                    }
+                }
+
+                if (activeFilters == 0) {
+                    // Нет питания — 1% в секунду
+                    zone.pressure = Math.max(0f, zone.pressure - 1f);
+                } else {
+                    float delta = zone.calculatePressureDelta(level);
+                    zone.pressure = Math.max(0f, Math.min(100f, zone.pressure + delta));
+                }
+
+                // Синхронизируем давление игрокам внутри зоны
+                for (UUID playerId : zone.playersInside) {
+                    ServerPlayer p = level.getServer().getPlayerList().getPlayer(playerId);
+                    if (p != null) {
+                        AtmosphereManager.setPressure(p, zone.pressure);
+                    }
+                }
+
+                data.setDirty();
+            }
+
+            // Удаляем мёртвые зоны — только когда давление УЖЕ упало до 0
             data.removeZoneIf(zone -> {
-                // Удаляем зону только когда давление полностью упало до 0
                 if (zone.filters.isEmpty() && zone.pressure <= 0f) {
                     zone.playersInside.forEach(id -> {
                         ServerPlayer p = level.getServer().getPlayerList().getPlayer(id);
                         if (p != null) {
                             AtmosphereManager.setPressure(p, 0f);
-                            // Убираем игрока из зоны в его NBT
                             p.getPersistentData().remove("thaloria_prev_zone");
                         }
                     });
@@ -45,33 +75,6 @@ public class PlayerAtmosphereHandler {
                 }
                 return false;
             });
-
-            // Обычный тик для живых зон
-            for (DomeZone zone : data.getAllZones()) {
-                if (zone.isScanning) continue;
-
-                // Фильтров нет — давление быстро падает
-                if (zone.filters.isEmpty()) {
-                    zone.pressure = Math.max(0f, zone.pressure - 10f);
-                    data.setDirty();
-                    continue;
-                }
-
-                // Обычный пересчёт
-                float delta = zone.calculatePressureDelta(level);
-                zone.pressure = Math.max(0f, Math.min(100f, zone.pressure + delta));
-
-                for (UUID playerId : zone.playersInside) {
-                    ServerPlayer player = level.getServer()
-                            .getPlayerList().getPlayer(playerId);
-                    if (player != null) {
-                        AtmosphereManager.setPressure(player, zone.pressure);
-                        applyBreathEffect(player, zone.pressure);
-                    }
-                }
-
-                data.setDirty();
-            }
         }
     }
 
@@ -86,12 +89,19 @@ public class PlayerAtmosphereHandler {
         BlockPos pos = player.blockPosition();
         DomeZoneSavedData data = DomeZoneSavedData.get(level);
 
-        DomeZone currentZone = data.getZoneContaining(pos);
-        UUID previousZoneId = getPreviousZoneId(player);
-        DomeZone previousZone = previousZoneId != null
+        DomeZone currentZone    = data.getZoneContaining(pos);
+        UUID     previousZoneId = getPreviousZoneId(player);
+        DomeZone previousZone   = previousZoneId != null
                 ? data.getZone(previousZoneId) : null;
 
-        if (currentZone != previousZone) {
+        // Если предыдущая зона ещё существует (давление падает) —
+        // НЕ считаем что игрок вышел, он остаётся в ней
+        if (currentZone == null && previousZone != null) {
+            // Зона ещё существует (давление > 0, просто нет фильтров)
+            // Давление уже обновляется через onServerTick по playersInside
+            // Ничего не делаем — ждём пока давление упадёт до 0 и зона удалится
+        } else if (currentZone != previousZone) {
+            // Реальная смена зоны
             if (previousZone != null) {
                 previousZone.playersInside.remove(player.getUUID());
                 data.setDirty();
@@ -99,10 +109,9 @@ public class PlayerAtmosphereHandler {
 
             if (currentZone != null) {
                 currentZone.playersInside.add(player.getUUID());
-                AtmosphereManager.setPressure(player, currentZone.pressure);
                 data.setDirty();
             } else {
-                // Вышел из купола — давление мгновенно 0
+                // Вышел из купола и предыдущей зоны нет — давление 0
                 AtmosphereManager.setPressure(player, 0f);
                 AtmosphereManager.setBreath(player, 0);
             }
@@ -110,12 +119,8 @@ public class PlayerAtmosphereHandler {
             setPreviousZoneId(player, currentZone != null ? currentZone.id : null);
         }
 
-        // Каждый тик синхронизируем давление игрока с зоной
-        // (чтобы падение давления зоны отражалось на игроке)
-        if (currentZone != null) {
-            AtmosphereManager.setPressure(player, currentZone.pressure);
-        } else {
-            // Снаружи — всегда 0
+        // Снаружи всех куполов (previousZone тоже null) — давление 0
+        if (currentZone == null && previousZone == null) {
             float current = AtmosphereManager.getPressure(player);
             if (current > 0f) AtmosphereManager.setPressure(player, 0f);
         }

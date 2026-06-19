@@ -229,8 +229,8 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
         if (zone != null) {
             zone.filters.remove(this.getBlockPos());
-            // НЕ удаляем зону — давление будет падать постепенно через тик
-            // Зона удалится сама когда давление упадёт до 0
+            // НЕ удаляем зону — пусть давление падает постепенно через тик
+            // Зона удалится сама в PlayerAtmosphereHandler когда pressure <= 0
             data.setDirty();
         }
 
