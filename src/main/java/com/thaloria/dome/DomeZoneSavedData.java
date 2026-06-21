@@ -55,9 +55,15 @@ public class DomeZoneSavedData extends SavedData {
     public DomeZone getZoneContaining(BlockPos pos) {
         for (DomeZone zone : zones.values()) {
             if (zone.isScanning) continue;
-            // Проверяем по фильтрам — если позиция игрока рядом с фильтром
-            // внутри радиуса сканирования то игрок внутри зоны
-            if (isInsideZone(zone, pos)) return zone;
+
+            if (!zone.filters.isEmpty()) {
+                // Обычная проверка через raycast к фильтру
+                if (isInsideZone(zone, pos)) return zone;
+            } else if (!zone.originalShell.isEmpty() && zone.pressure > 0f) {
+                // Фильтр снесён но зона ещё "живая" (давление падает)
+                // Проверяем через AABB оболочки — быстро и без фильтра
+                if (isInsideShellAABB(zone, pos)) return zone;
+            }
         }
         return null;
     }
@@ -101,6 +107,28 @@ public class DomeZoneSavedData extends SavedData {
             if (inside >= 5) return true;
         }
         return false;
+    }
+
+    /**
+     * Быстрая проверка через AABB оболочки — используется когда фильтров нет.
+     * Игрок считается внутри если его позиция строго внутри min/max границ shell.
+     */
+    private boolean isInsideShellAABB(DomeZone zone, BlockPos playerPos) {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+
+        for (BlockPos p : zone.originalShell) {
+            if (p.getX() < minX) minX = p.getX();
+            if (p.getY() < minY) minY = p.getY();
+            if (p.getZ() < minZ) minZ = p.getZ();
+            if (p.getX() > maxX) maxX = p.getX();
+            if (p.getY() > maxY) maxY = p.getY();
+            if (p.getZ() > maxZ) maxZ = p.getZ();
+        }
+
+        return playerPos.getX() > minX && playerPos.getX() < maxX
+                && playerPos.getY() > minY && playerPos.getY() < maxY
+                && playerPos.getZ() > minZ && playerPos.getZ() < maxZ;
     }
 
     private boolean rayHitsShell(DomeZone zone,

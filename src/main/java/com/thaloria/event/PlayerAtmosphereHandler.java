@@ -221,4 +221,27 @@ public class PlayerAtmosphereHandler {
             }
         }
     }
+
+    @SubscribeEvent
+    public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (!(player.level() instanceof ServerLevel level)) return;
+
+        DomeZoneSavedData data = DomeZoneSavedData.get(level);
+        BlockPos pos = player.blockPosition();
+
+        // Принудительно пересчитываем зону при входе
+        DomeZone zone = data.getZoneContaining(pos);
+
+        if (zone != null) {
+            zone.playersInside.add(player.getUUID());
+            AtmosphereManager.setPressure(player, zone.pressure);
+            setPreviousZoneId(player, zone.id);
+            data.setDirty();
+        } else {
+            // Снаружи — сбрасываем всё
+            AtmosphereManager.setPressure(player, 0f);
+            player.getPersistentData().remove("thaloria_prev_zone");
+        }
+    }
 }
