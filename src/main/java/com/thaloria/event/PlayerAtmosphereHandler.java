@@ -41,10 +41,27 @@ public class PlayerAtmosphereHandler {
                     }
                 }
 
-                // Обновляем давление зоны
                 if (activeFilters == 0) {
+                    // Нет питания — давление падает
                     zone.pressure = Math.max(0f, zone.pressure - 1f);
+                } else if (!zone.isSealed) {
+                    // Купол не герметичен — проверяем раз в 10 секунд
+                    // не закрыли ли дыры
+                    if (level.getGameTime() % 200 == 0) {
+                        zone.recalculateBreaches(level);
+                        // Если брешей нет — купол снова герметичен
+                        if (zone.breaches.isEmpty()) {
+                            zone.isSealed = true;
+                            DomeZoneSavedData.get(level).setDirty();
+                            level.getServer().sendSystemMessage(
+                                    net.minecraft.network.chat.Component.literal(
+                                            "§a[Thaloria] Dome sealed! Pressure building up."));
+                        }
+                    }
+                    // Давление не растёт пока не герметичен
+                    zone.pressure = Math.max(0f, zone.pressure - 0.5f);
                 } else {
+                    // Питание есть и купол герметичен — давление растёт
                     float delta = zone.calculatePressureDelta(level);
                     zone.pressure = Math.max(0f, Math.min(100f, zone.pressure + delta));
                 }

@@ -200,6 +200,13 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         zoneId = existingZone.id;
                         dataRef.setDirty();
                         existingZone.recalculateBreaches(levelRef);
+                        existingZone.isSealed = result.isSealed;
+                        if (!existingZone.isSealed) {
+                            levelRef.getServer().sendSystemMessage(
+                                    net.minecraft.network.chat.Component.literal(
+                                            "§c[Thaloria] Dome is NOT sealed! Pressure will not build up. " +
+                                                    "Use Breach Detector to find openings."));
+                        }
 
                     } else {
                         // Существующей зоны нет — создаём новую
@@ -217,9 +224,17 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                             zone.hasBaseline = true;
                         }
 
+                        zone.isSealed = result.isSealed;
                         dataRef.addZone(zone);
                         zoneId = zone.id;
                         zone.recalculateBreaches(levelRef);
+
+                        if (!zone.isSealed) {
+                            levelRef.getServer().sendSystemMessage(
+                                    net.minecraft.network.chat.Component.literal(
+                                            "§c[Thaloria] Dome is NOT sealed! Pressure will not build up. " +
+                                                    "Use Breach Detector to find openings."));
+                        }
                     }
 
                     isScanning = false;

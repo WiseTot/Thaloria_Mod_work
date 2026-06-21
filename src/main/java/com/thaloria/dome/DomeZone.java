@@ -30,6 +30,7 @@ public class DomeZone {
     public boolean isScanning = false;
     public int scanProgress = 0;
     public boolean hasBaseline = false; // есть ли эталон
+    public boolean isSealed = true; // герметичен ли купол
 
     public DomeZone(UUID id) {
         this.id = id;
@@ -89,6 +90,7 @@ public class DomeZone {
         tag.putFloat("volume", volume);
         tag.putInt("scanRadius", scanRadius);
         tag.putBoolean("hasBaseline", hasBaseline);
+        tag.putBoolean("isSealed", isSealed);
 
         ListTag filterList = new ListTag();
         for (BlockPos pos : filters) {
@@ -115,6 +117,7 @@ public class DomeZone {
         zone.volume = tag.getFloat("volume");
         zone.scanRadius = tag.getInt("scanRadius");
         zone.hasBaseline = tag.getBoolean("hasBaseline");
+        zone.isSealed = tag.getBoolean("isSealed");
 
         ListTag filterList = tag.getList("filters", Tag.TAG_COMPOUND);
         for (int i = 0; i < filterList.size(); i++) {

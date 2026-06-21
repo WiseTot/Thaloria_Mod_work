@@ -114,7 +114,9 @@ public class DomeScanTask {
         float estimatedVolume = Math.max(1f,
                 (float)(1.33f * Math.PI * avgRadius * avgRadius * avgRadius));
 
-        return new ScanResult(shellBlocks, estimatedVolume);
+        // Купол герметичен если 95%+ лучей попали в оболочку
+        boolean isSealed = hitRays >= (int)(RAY_COUNT * 0.95f);
+        return new ScanResult(shellBlocks, estimatedVolume, isSealed);
     }
 
     private static RayResult castRay(ServerLevel level, BlockPos origin,
@@ -172,12 +174,14 @@ public class DomeScanTask {
     }
 
     public static class ScanResult {
-        public final Set<BlockPos> shell; // это и есть эталон
+        public final Set<BlockPos> shell;
         public final float volume;
+        public final boolean isSealed; // герметичен ли купол
 
-        public ScanResult(Set<BlockPos> shell, float volume) {
-            this.shell = shell;
-            this.volume = volume;
+        public ScanResult(Set<BlockPos> shell, float volume, boolean isSealed) {
+            this.shell    = shell;
+            this.volume   = volume;
+            this.isSealed = isSealed;
         }
     }
 
