@@ -15,7 +15,6 @@ import net.minecraftforge.fml.common.Mod;
 import com.thaloria.ThaloriaMod;
 
 import java.util.List;
-import java.util.UUID;
 
 @Mod.EventBusSubscriber(modid = ThaloriaMod.MOD_ID)
 public class PlayerAtmosphereHandler {
@@ -102,32 +101,33 @@ public class PlayerAtmosphereHandler {
         int suitO2 = hasFullSuit ? SuitOxygenUtil.getSuitOxygen(armorPieces) : 0;
 
         if (pressure >= 80f) {
-            AtmosphereManager.addBreath(player, 2);
+            // Хорошее давление — дыхание сразу полное
+            AtmosphereManager.setBreath(player, 40);
 
         } else if (pressure >= 60f) {
-            if (hasFullSuit && suitO2 > 0) {
-                SuitOxygenUtil.removeSuitOxygen(armorPieces, 1);
-                AtmosphereManager.addBreath(player, 1);
-            } else {
-                AtmosphereManager.removeBreath(player, 1);
-            }
+            // Среднее давление — дыхание восстанавливается медленно
+            AtmosphereManager.addBreath(player, 2);
 
         } else if (pressure >= 40f) {
-            if (hasFullSuit && suitO2 > 0) {
-                SuitOxygenUtil.removeSuitOxygen(armorPieces, 2);
-            } else {
-                AtmosphereManager.removeBreath(player, 2);
-            }
-
+            // Давление низкое но есть — дыхание медленно растёт
+            AtmosphereManager.addBreath(player, 1);
+            // Если есть костюм — экономим его кислород (не тратим)
+            // Если нет костюма — всё равно дыхание растёт, просто медленно
         } else {
+            // Критическое давление — дыхание сразу 0
+            AtmosphereManager.setBreath(player, 0);
+
+            // Костюм тратит кислород чтобы защитить игрока
             if (hasFullSuit && suitO2 > 0) {
                 SuitOxygenUtil.removeSuitOxygen(armorPieces, 4);
             } else {
-                AtmosphereManager.removeBreath(player, 4);
+                // Без костюма — урон
+                player.hurt(player.damageSources().generic(), 1.0f);
             }
         }
 
-        if (AtmosphereManager.getBreath(player) <= 0) {
+        // Если дыхание 0 и нет костюма — урон
+        if (AtmosphereManager.getBreath(player) <= 0 && !(hasFullSuit && suitO2 > 0)) {
             player.hurt(player.damageSources().generic(), 1.0f);
         }
     }

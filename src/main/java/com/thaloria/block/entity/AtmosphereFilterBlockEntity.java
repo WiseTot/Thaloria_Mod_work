@@ -125,10 +125,11 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
         isScanning = true;
         scanProgress = 0;
 
-        // Сохраняем давление если зона уже была
+        DomeZoneSavedData data = DomeZoneSavedData.get(level);
+
+        // Сохраняем давление и baseline из СВОЕЙ зоны
         float savedPressure = 0f;
         boolean alreadyHasBaseline = false;
-        DomeZoneSavedData data = DomeZoneSavedData.get(level);
         if (zoneId != null) {
             DomeZone existing = data.getZone(zoneId);
             if (existing != null) {
@@ -136,6 +137,18 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                 alreadyHasBaseline = existing.hasBaseline;
             }
         }
+
+        // Ищем живую зону вокруг — для случая когда это новый фильтр
+        // поставленный пока старая зона ещё жива и давление падает
+        if (savedPressure == 0f) {
+            DomeZone nearbyZone = data.getZoneContaining(this.getBlockPos().above());
+            if (nearbyZone == null) nearbyZone = data.getZoneContaining(this.getBlockPos().below());
+            if (nearbyZone != null && nearbyZone.pressure > 0f) {
+                savedPressure = nearbyZone.pressure;
+                alreadyHasBaseline = nearbyZone.hasBaseline;
+            }
+        }
+
         final float pressureToRestore = savedPressure;
         final boolean keepBaseline = alreadyHasBaseline;
 
@@ -156,13 +169,25 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
                 levelRef.getServer().execute(() -> {
                     DomeZoneSavedData dataRef = DomeZoneSavedData.get(levelRef);
-                    DomeZone existingZone = dataRef.getZoneContaining(originPos);
 
-                    if (existingZone != null && !existingZone.filters.isEmpty()) {
+                    // Ищем существующую зону — проверяем блок над фильтром
+                    // (он точно внутри купола) и саму позицию фильтра
+                    DomeZone existingZone = dataRef.getZoneContaining(originPos.above());
+                    if (existingZone == null) {
+                        existingZone = dataRef.getZoneContaining(originPos);
+                    }
+
+                    if (existingZone != null) {
+                        // Присоединяемся к существующей зоне
                         existingZone.filters.add(originPos);
                         existingZone.volume = (existingZone.volume + result.volume) / 2f;
 
-                        // Если у существующей зоны уже есть baseline — НЕ перезаписываем
+                        // Восстанавливаем давление если зона потеряла его
+                        if (existingZone.pressure < pressureToRestore) {
+                            existingZone.pressure = pressureToRestore;
+                        }
+
+                        // Baseline не перезаписываем если уже есть
                         if (!existingZone.hasBaseline) {
                             for (BlockPos shellPos : result.shell) {
                                 if (DomeScanTask.isDomeBlock(levelRef.getBlockState(shellPos))) {
@@ -175,7 +200,9 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         zoneId = existingZone.id;
                         dataRef.setDirty();
                         existingZone.recalculateBreaches(levelRef);
+
                     } else {
+                        // Существующей зоны нет — создаём новую
                         DomeZone zone = new DomeZone(UUID.randomUUID());
                         zone.filters.add(originPos);
                         zone.volume = result.volume;
@@ -183,17 +210,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         zone.isScanning = false;
                         zone.pressure = pressureToRestore;
 
-                        // Если baseline уже был (перезагрузка мира) — НЕ строим новый
-                        // Baseline строится только через Update Baseline вручную
-                        if (!keepBaseline) {
-                            Set<BlockPos> allDomeBlocks = DomeScanTask.collectAllDomeBlocks(
-                                    levelRef, originPos, radius);
-                            zone.originalShell.addAll(allDomeBlocks);
-                            zone.hasBaseline = true;
-                        }
-                        // Если keepBaseline=true но originalShell пустой —
-                        // значит зона была удалена, строим baseline заново
-                        if (zone.originalShell.isEmpty()) {
+                        if (!keepBaseline || zone.originalShell.isEmpty()) {
                             Set<BlockPos> allDomeBlocks = DomeScanTask.collectAllDomeBlocks(
                                     levelRef, originPos, radius);
                             zone.originalShell.addAll(allDomeBlocks);
