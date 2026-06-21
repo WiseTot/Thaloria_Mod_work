@@ -170,11 +170,27 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                 levelRef.getServer().execute(() -> {
                     DomeZoneSavedData dataRef = DomeZoneSavedData.get(levelRef);
 
-                    // Ищем существующую зону — проверяем блок над фильтром
-                    // (он точно внутри купола) и саму позицию фильтра
-                    DomeZone existingZone = dataRef.getZoneContaining(originPos.above());
-                    if (existingZone == null) {
-                        existingZone = dataRef.getZoneContaining(originPos);
+                    // Ищем существующую зону к которой принадлежит этот фильтр.
+                    // Проверяем блок над фильтром — он должен быть внутри купола.
+                    // Дополнительно проверяем что оболочка зоны реально близко
+                    // (защита от ложного присоединения к соседнему куполу по AABB).
+                    DomeZone existingZone = null;
+                    DomeZone candidate = dataRef.getZoneContaining(originPos.above());
+                    if (candidate == null) {
+                        candidate = dataRef.getZoneContaining(originPos);
+                    }
+
+                    if (candidate != null) {
+                        // Проверяем что ближайший блок оболочки этой зоны
+                        // находится в пределах радиуса скана нашего фильтра
+                        double minDistSq = Double.MAX_VALUE;
+                        for (BlockPos shellPos : candidate.originalShell) {
+                            double dist = shellPos.distSqr(originPos);
+                            if (dist < minDistSq) minDistSq = dist;
+                        }
+                        if (minDistSq <= (double) radius * radius) {
+                            existingZone = candidate;
+                        }
                     }
 
                     if (existingZone != null) {
@@ -197,14 +213,16 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                             existingZone.hasBaseline = true;
                         }
 
+                        existingZone.isSealed = result.isSealed;
                         zoneId = existingZone.id;
                         dataRef.setDirty();
                         existingZone.recalculateBreaches(levelRef);
-                        existingZone.isSealed = result.isSealed;
+
                         if (!existingZone.isSealed) {
                             levelRef.getServer().sendSystemMessage(
                                     net.minecraft.network.chat.Component.literal(
-                                            "§c[Thaloria] Dome is NOT sealed! Pressure will not build up. " +
+                                            "§c[Thaloria] Dome is NOT sealed! " +
+                                                    "Pressure will not build up. " +
                                                     "Use Breach Detector to find openings."));
                         }
 
@@ -216,6 +234,7 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         zone.scanRadius = radius;
                         zone.isScanning = false;
                         zone.pressure = pressureToRestore;
+                        zone.isSealed = result.isSealed;
 
                         if (!keepBaseline || zone.originalShell.isEmpty()) {
                             Set<BlockPos> allDomeBlocks = DomeScanTask.collectAllDomeBlocks(
@@ -224,7 +243,6 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                             zone.hasBaseline = true;
                         }
 
-                        zone.isSealed = result.isSealed;
                         dataRef.addZone(zone);
                         zoneId = zone.id;
                         zone.recalculateBreaches(levelRef);
@@ -232,7 +250,8 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                         if (!zone.isSealed) {
                             levelRef.getServer().sendSystemMessage(
                                     net.minecraft.network.chat.Component.literal(
-                                            "§c[Thaloria] Dome is NOT sealed! Pressure will not build up. " +
+                                            "§c[Thaloria] Dome is NOT sealed! " +
+                                                    "Pressure will not build up. " +
                                                     "Use Breach Detector to find openings."));
                         }
                     }
