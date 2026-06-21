@@ -127,7 +127,7 @@ public class DomeZoneSavedData extends SavedData {
         }
 
         return playerPos.getX() > minX && playerPos.getX() < maxX
-                && playerPos.getY() > minY && playerPos.getY() < maxY
+                && playerPos.getY() >= minY && playerPos.getY() < maxY
                 && playerPos.getZ() > minZ && playerPos.getZ() < maxZ;
     }
 
