@@ -167,6 +167,12 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
 
                 DomeScanTask.ScanResult result = DomeScanTask.scan(levelRef, originPos, radius);
 
+                // DEBUG — показываем результат скана игрокам
+                for (net.minecraft.server.level.ServerPlayer p : levelRef.players()) {
+                    p.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                            "§e[SCAN RESULT] isSealed=" + result.isSealed));
+                }
+
                 levelRef.getServer().execute(() -> {
                     DomeZoneSavedData dataRef = DomeZoneSavedData.get(levelRef);
 

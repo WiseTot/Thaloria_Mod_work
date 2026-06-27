@@ -45,17 +45,22 @@ public class PlayerAtmosphereHandler {
                     // Нет питания — давление падает
                     zone.pressure = Math.max(0f, zone.pressure - 1f);
                 } else if (!zone.isSealed) {
-                    // Купол не герметичен — проверяем раз в 10 секунд
-                    // не закрыли ли дыры
+                    // Купол не герметичен — перепроверяем через строгий raycast раз в 10 секунд
                     if (level.getGameTime() % 200 == 0) {
-                        zone.recalculateBreaches(level);
-                        // Если брешей нет — купол снова герметичен
-                        if (zone.breaches.isEmpty()) {
-                            zone.isSealed = true;
-                            DomeZoneSavedData.get(level).setDirty();
-                            level.getServer().sendSystemMessage(
-                                    net.minecraft.network.chat.Component.literal(
+                        // Берём позицию любого фильтра как origin для проверки
+                        BlockPos filterPos = zone.filters.isEmpty() ? null
+                                : zone.filters.iterator().next();
+                        if (filterPos != null) {
+                            com.thaloria.dome.DomeScanTask.SealCheckResult check =
+                                    com.thaloria.dome.DomeScanTask.checkSealed(level, filterPos, zone.scanRadius);
+                            if (check.isSealed) {
+                                zone.isSealed = true;
+                                DomeZoneSavedData.get(level).setDirty();
+                                for (ServerPlayer p : level.players()) {
+                                    p.sendSystemMessage(net.minecraft.network.chat.Component.literal(
                                             "§a[Thaloria] Dome sealed! Pressure building up."));
+                                }
+                            }
                         }
                     }
                     // Давление не растёт пока не герметичен
