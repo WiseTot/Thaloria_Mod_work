@@ -120,10 +120,19 @@ public class DomeScanTask {
         float avgRadius = hitRays > 0 ? totalDistance / hitRays : 1f;
         float estimatedVolume = Math.max(1f,
                 (float)(1.33f * Math.PI * avgRadius * avgRadius * avgRadius));
+        
+        // Если хоть один отсутствует — есть дыра
+        int missingBlocks = 0;
+        for (BlockPos shellPos : shellBlocks) {
+            if (!isDomeBlock(level.getBlockState(shellPos))) {
+                missingBlocks++;
+            }
+        }
 
-        // Герметичность определяем по строгому счётчику
-        // 90% лучей должны точно попасть в блок купола
-        boolean isSealed = sealedHits >= (int)(RAY_COUNT * 0.90f);
+        // Строгий raycast + прямая проверка эталона
+        boolean raycastSealed = sealedHits >= (int)(RAY_COUNT * 0.90f);
+        boolean shellIntact   = missingBlocks == 0;
+        boolean isSealed      = raycastSealed && shellIntact;
 
         // DEBUG
         level.getServer().sendSystemMessage(
