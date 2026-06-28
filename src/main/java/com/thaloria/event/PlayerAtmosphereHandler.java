@@ -75,7 +75,18 @@ public class PlayerAtmosphereHandler {
             }
 
             // Удаляем мёртвые зоны (нет фильтров + давление 0)
-            data.removeZoneIf(zone -> zone.filters.isEmpty() && zone.pressure <= 0f);
+            data.removeZoneIf(zone -> {
+                if (zone.pressure > 0f) return false;
+                // Проверяем что ни одного живого фильтра не осталось
+                for (BlockPos filterPos : zone.filters) {
+                    if (level.getBlockEntity(filterPos) instanceof
+                            com.thaloria.block.entity.AtmosphereFilterBlockEntity f
+                            && f.isPowered) {
+                        return false; // есть живой фильтр — не удаляем
+                    }
+                }
+                return true; // давление 0 и нет живых фильтров — удаляем
+            });
         }
     }
 

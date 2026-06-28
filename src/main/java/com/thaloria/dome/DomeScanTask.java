@@ -120,17 +120,28 @@ public class DomeScanTask {
         float avgRadius = hitRays > 0 ? totalDistance / hitRays : 1f;
         float estimatedVolume = Math.max(1f,
                 (float)(1.33f * Math.PI * avgRadius * avgRadius * avgRadius));
-        
+
         // Если хоть один отсутствует — есть дыра
         int missingBlocks = 0;
         for (BlockPos shellPos : shellBlocks) {
-            if (!isDomeBlock(level.getBlockState(shellPos))) {
+            BlockState shellState = level.getBlockState(shellPos);
+            // Дыра — это воздух на месте где должен быть блок купола
+            // Блоки пола и другие твёрдые блоки не считаем дырами
+            if (shellState.isAir()) {
                 missingBlocks++;
             }
         }
 
         // Строгий raycast + прямая проверка эталона
         boolean raycastSealed = sealedHits >= (int)(RAY_COUNT * 0.90f);
+        // DEBUG
+        level.getServer().sendSystemMessage(
+                net.minecraft.network.chat.Component.literal(
+                        "§e[SEAL CHECK] shellBlocks=" + shellBlocks.size() +
+                                " missing=" + missingBlocks +
+                                " raycastSealed=" + raycastSealed +
+                                " shellIntact=" + (missingBlocks == 0)));
+
         boolean shellIntact   = missingBlocks == 0;
         boolean isSealed      = raycastSealed && shellIntact;
 
