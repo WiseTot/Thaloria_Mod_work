@@ -56,7 +56,8 @@ public class AtmosphereFilterBlock extends BaseEntityBlock {
                     new OpenFilterScreenPacket(
                             pos, filter.scanRadius, filter.isPowered,
                             filter.isScanning, filter.scanProgress,
-                            shellCount, breachCount, pressure, pressureDelta, filterCount
+                            shellCount, breachCount, pressure, pressureDelta,
+                            filterCount, zone != null && zone.isSealed
                     )
             );
         }

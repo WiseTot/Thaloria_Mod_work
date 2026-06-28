@@ -51,7 +51,8 @@ public class RequestFilterDataPacket {
                     new OpenFilterScreenPacket(
                             packet.filterPos, filter.scanRadius, filter.isPowered,
                             filter.isScanning, filter.scanProgress,
-                            shellCount, breachCount, pressure, pressureDelta, filterCount
+                            shellCount, breachCount, pressure, pressureDelta,
+                            filterCount, zone != null && zone.isSealed
                     )
             );
         });

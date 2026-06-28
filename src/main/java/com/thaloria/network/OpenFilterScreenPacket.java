@@ -8,7 +8,6 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
-// Пакет от сервера к клиенту — открыть экран фильтра
 public class OpenFilterScreenPacket {
 
     private final BlockPos pos;
@@ -21,11 +20,13 @@ public class OpenFilterScreenPacket {
     private final float pressure;
     private final float pressureDelta;
     private final int filterCount;
+    private final boolean isSealed;
 
     public OpenFilterScreenPacket(BlockPos pos, int radius, boolean isPowered,
                                   boolean isScanning, int scanProgress,
                                   int shellCount, int breachCount,
-                                  float pressure, float pressureDelta, int filterCount) {
+                                  float pressure, float pressureDelta,
+                                  int filterCount, boolean isSealed) {
         this.pos = pos;
         this.radius = radius;
         this.isPowered = isPowered;
@@ -36,6 +37,7 @@ public class OpenFilterScreenPacket {
         this.pressure = pressure;
         this.pressureDelta = pressureDelta;
         this.filterCount = filterCount;
+        this.isSealed = isSealed;
     }
 
     public static void encode(OpenFilterScreenPacket p, FriendlyByteBuf buf) {
@@ -49,34 +51,35 @@ public class OpenFilterScreenPacket {
         buf.writeFloat(p.pressure);
         buf.writeFloat(p.pressureDelta);
         buf.writeInt(p.filterCount);
+        buf.writeBoolean(p.isSealed);
     }
 
     public static OpenFilterScreenPacket decode(FriendlyByteBuf buf) {
         return new OpenFilterScreenPacket(
                 buf.readBlockPos(), buf.readInt(), buf.readBoolean(),
                 buf.readBoolean(), buf.readInt(), buf.readInt(),
-                buf.readInt(), buf.readFloat(), buf.readFloat(), buf.readInt()
+                buf.readInt(), buf.readFloat(), buf.readFloat(),
+                buf.readInt(), buf.readBoolean()
         );
     }
 
-    public static void handle(OpenFilterScreenPacket packet, Supplier<NetworkEvent.Context> ctx) {
+    public static void handle(OpenFilterScreenPacket packet,
+                              Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
-            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-
-            // Если экран уже открыт — обновляем данные без переоткрытия
+            Minecraft mc = Minecraft.getInstance();
             if (mc.screen instanceof AtmosphereFilterScreen filterScreen) {
                 filterScreen.updateData(
                         packet.isPowered, packet.isScanning, packet.scanProgress,
                         packet.shellCount, packet.breachCount, packet.pressure,
-                        packet.pressureDelta, packet.filterCount
+                        packet.pressureDelta, packet.filterCount, packet.isSealed
                 );
             } else {
-                // Открываем экран первый раз
                 mc.setScreen(new AtmosphereFilterScreen(
                         packet.pos, packet.radius, packet.isPowered,
                         packet.isScanning, packet.scanProgress,
                         packet.shellCount, packet.breachCount,
-                        packet.pressure, packet.pressureDelta, packet.filterCount
+                        packet.pressure, packet.pressureDelta,
+                        packet.filterCount, packet.isSealed
                 ));
             }
         });
