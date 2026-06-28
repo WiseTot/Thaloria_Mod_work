@@ -71,24 +71,58 @@ public class BreachDetectorActionPacket {
                         return;
                     }
 
-                    // Пересчитываем бреши прямо сейчас — сравниваем эталон с реальностью
-                    zone.recalculateBreaches(level);
-                    DomeZoneSavedData.get(level).setDirty();
+                    if (!zone.isSealed) {
+                        // Купол не герметичен — показываем дыры через flood fill
+                        // Берём позицию фильтра как точку старта
+                        BlockPos filterPos = zone.filters.isEmpty() ? null
+                                : zone.filters.iterator().next();
 
-                    // Отправляем актуальный список брешей клиенту
-                    ModNetwork.CHANNEL.send(
-                            PacketDistributor.PLAYER.with(() -> player),
-                            new SyncBreachesPacket(
-                                    new ArrayList<>(zone.breaches),
-                                    packet.detectorPos
-                            )
-                    );
+                        if (filterPos == null) {
+                            player.sendSystemMessage(Component.literal(
+                                    "§c[Thaloria] No filter found in zone!"));
+                            return;
+                        }
 
-                    player.sendSystemMessage(Component.literal(
-                            zone.breaches.isEmpty()
-                                    ? "§a[Thaloria] No breaches detected!"
-                                    : "§e[Thaloria] Found " + zone.breaches.size() + " breach(es)!"
-                    ));
+                        java.util.Set<BlockPos> leaks = com.thaloria.dome.DomeScanTask
+                                .findLeakPositions(level, filterPos, zone.scanRadius);
+
+                        if (leaks.isEmpty()) {
+                            // Flood fill не нашёл дыр — может купол уже герметичен
+                            player.sendSystemMessage(Component.literal(
+                                    "§e[Thaloria] No leak positions found. " +
+                                            "Try pressing Update Baseline on the filter."));
+                        } else {
+                            ModNetwork.CHANNEL.send(
+                                    PacketDistributor.PLAYER.with(() -> player),
+                                    new SyncBreachesPacket(
+                                            new ArrayList<>(leaks),
+                                            packet.detectorPos
+                                    )
+                            );
+                            player.sendSystemMessage(Component.literal(
+                                    "§e[Thaloria] Found " + leaks.size() +
+                                            " leak position(s)! Dome is NOT sealed."));
+                        }
+
+                    } else {
+                        // Купол герметичен — обычная проверка брешей через эталон
+                        zone.recalculateBreaches(level);
+                        DomeZoneSavedData.get(level).setDirty();
+
+                        ModNetwork.CHANNEL.send(
+                                PacketDistributor.PLAYER.with(() -> player),
+                                new SyncBreachesPacket(
+                                        new ArrayList<>(zone.breaches),
+                                        packet.detectorPos
+                                )
+                        );
+
+                        player.sendSystemMessage(Component.literal(
+                                zone.breaches.isEmpty()
+                                        ? "§a[Thaloria] No breaches detected!"
+                                        : "§e[Thaloria] Found " + zone.breaches.size() + " breach(es)!"
+                        ));
+                    }
                 }
 
                 case TOGGLE_AUTO_MONITOR -> {

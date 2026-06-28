@@ -81,18 +81,29 @@ public class DomeScanTask {
         );
     }
 
+    public static class HermeticResult {
+        public final boolean isSealed;
+        public final Set<BlockPos> leaks; // пустой если герметичен
+
+        public HermeticResult(boolean isSealed, Set<BlockPos> leaks) {
+            this.isSealed = isSealed;
+            this.leaks    = leaks;
+        }
+    }
+
     /**
-     * Проверка герметичности через flood fill.
-     * Запускаем BFS от origin по воздушным блокам.
-     * Если дошли до границы радиуса — есть выход наружу → не герметичен.
-     * Если flood fill завершился внутри — купол герметичен.
+     * Единый flood fill — определяет герметичность И находит дыры.
+     * Дыры — это блоки купола у которых есть воздух внутри и снаружи одновременно.
      */
-    private static boolean isHermetic(ServerLevel level, BlockPos origin, int radius) {
+    public static HermeticResult checkHermetic(ServerLevel level,
+                                               BlockPos origin, int radius) {
         Set<BlockPos> visited = new HashSet<>();
         Queue<BlockPos> queue = new ArrayDeque<>();
 
         queue.add(origin);
         visited.add(origin);
+
+        boolean leaked = false;
 
         int[] ddx = {1, -1, 0, 0, 0, 0};
         int[] ddy = {0, 0, 1, -1, 0, 0};
@@ -101,11 +112,11 @@ public class DomeScanTask {
         while (!queue.isEmpty()) {
             BlockPos pos = queue.poll();
 
-            // Если дошли до границы радиуса — утечка наружу
             if (Math.abs(pos.getX() - origin.getX()) >= radius ||
                     Math.abs(pos.getY() - origin.getY()) >= radius ||
                     Math.abs(pos.getZ() - origin.getZ()) >= radius) {
-                return false;
+                leaked = true;
+                continue; // продолжаем чтобы найти все внутренние блоки
             }
 
             for (int i = 0; i < 6; i++) {
@@ -114,18 +125,84 @@ public class DomeScanTask {
                 visited.add(next);
 
                 BlockState state = level.getBlockState(next);
+                if (isDomeBlock(state) || isSolidFloor(level, next)) continue;
 
-                // Стена — блок купола или твёрдый пол, не проходим
-                if (isDomeBlock(state)) continue;
-                if (isSolidFloor(level, next)) continue;
-
-                // Воздух или другой нетвёрдый блок — идём дальше
                 queue.add(next);
             }
         }
 
-        // Flood fill завершился не достигнув границы — герметично
-        return true;
+        if (!leaked) {
+            return new HermeticResult(true, new HashSet<>());
+        }
+
+// Flood fill СНАРУЖИ — от всех точек на границе радиуса
+// Находим все воздушные блоки достижимые снаружи
+        Set<BlockPos> exterior = new HashSet<>();
+        Queue<BlockPos> qExt = new ArrayDeque<>();
+
+// Стартуем с всех граничных точек
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    if (Math.abs(x) == radius || Math.abs(y) == radius || Math.abs(z) == radius) {
+                        BlockPos p = origin.offset(x, y, z);
+                        if (!exterior.contains(p)) {
+                            BlockState st = level.getBlockState(p);
+                            if (!isDomeBlock(st) && !isSolidFloor(level, p)) {
+                                exterior.add(p);
+                                qExt.add(p);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+// Flood fill снаружи внутрь (но не за границу)
+        while (!qExt.isEmpty()) {
+            BlockPos pos = qExt.poll();
+            for (int i = 0; i < 6; i++) {
+                BlockPos next = pos.offset(ddx[i], ddy[i], ddz[i]);
+                if (exterior.contains(next)) continue;
+                if (Math.abs(next.getX() - origin.getX()) > radius ||
+                        Math.abs(next.getY() - origin.getY()) > radius ||
+                        Math.abs(next.getZ() - origin.getZ()) > radius) continue;
+
+                BlockState state = level.getBlockState(next);
+                if (isDomeBlock(state) || isSolidFloor(level, pos)) continue;
+
+                exterior.add(next);
+                qExt.add(next);
+            }
+        }
+
+// Дыры — воздушные блоки из exterior которые граничат с блоком купола
+// и при этом с другой стороны тоже воздух (не в exterior — т.е. внутри)
+        Set<BlockPos> leaks = new HashSet<>();
+        for (BlockPos pos : exterior) {
+            for (int i = 0; i < 6; i++) {
+                BlockPos neighbor = pos.offset(ddx[i], ddy[i], ddz[i]);
+                if (isDomeBlock(level.getBlockState(neighbor))) continue;
+                if (isSolidFloor(level, neighbor)) continue;
+                // Сосед — воздух но НЕ в exterior → это внутреннее пространство
+                // Значит pos граничит с внутренним через дыру
+                if (!exterior.contains(neighbor)) {
+                    leaks.add(pos); // показываем внешний край дыры
+                    break;
+                }
+            }
+        }
+
+        return new HermeticResult(false, leaks);
+    }
+
+    private static boolean isHermetic(ServerLevel level, BlockPos origin, int radius) {
+        return checkHermetic(level, origin, radius).isSealed;
+    }
+
+    public static Set<BlockPos> findLeakPositions(ServerLevel level,
+                                                  BlockPos origin, int radius) {
+        return checkHermetic(level, origin, radius).leaks;
     }
 
     public static ScanResult scan(ServerLevel level, BlockPos origin, int radius) {
