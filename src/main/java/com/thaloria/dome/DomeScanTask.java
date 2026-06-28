@@ -3,14 +3,15 @@ package com.thaloria.dome;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.ArrayDeque;
 import java.util.HashSet;
+import java.util.Queue;
 import java.util.Set;
 
 public class DomeScanTask {
@@ -80,14 +81,57 @@ public class DomeScanTask {
         );
     }
 
-    // Сканирование — теперь возвращает только блоки купола (эталон)
-    // Бреши больше не определяются raycast'ом — они считаются позже
-    // сравнением эталона с реальностью
+    /**
+     * Проверка герметичности через flood fill.
+     * Запускаем BFS от origin по воздушным блокам.
+     * Если дошли до границы радиуса — есть выход наружу → не герметичен.
+     * Если flood fill завершился внутри — купол герметичен.
+     */
+    private static boolean isHermetic(ServerLevel level, BlockPos origin, int radius) {
+        Set<BlockPos> visited = new HashSet<>();
+        Queue<BlockPos> queue = new ArrayDeque<>();
+
+        queue.add(origin);
+        visited.add(origin);
+
+        int[] ddx = {1, -1, 0, 0, 0, 0};
+        int[] ddy = {0, 0, 1, -1, 0, 0};
+        int[] ddz = {0, 0, 0, 0, 1, -1};
+
+        while (!queue.isEmpty()) {
+            BlockPos pos = queue.poll();
+
+            // Если дошли до границы радиуса — утечка наружу
+            if (Math.abs(pos.getX() - origin.getX()) >= radius ||
+                    Math.abs(pos.getY() - origin.getY()) >= radius ||
+                    Math.abs(pos.getZ() - origin.getZ()) >= radius) {
+                return false;
+            }
+
+            for (int i = 0; i < 6; i++) {
+                BlockPos next = pos.offset(ddx[i], ddy[i], ddz[i]);
+                if (visited.contains(next)) continue;
+                visited.add(next);
+
+                BlockState state = level.getBlockState(next);
+
+                // Стена — блок купола или твёрдый пол, не проходим
+                if (isDomeBlock(state)) continue;
+                if (isSolidFloor(level, next)) continue;
+
+                // Воздух или другой нетвёрдый блок — идём дальше
+                queue.add(next);
+            }
+        }
+
+        // Flood fill завершился не достигнув границы — герметично
+        return true;
+    }
+
     public static ScanResult scan(ServerLevel level, BlockPos origin, int radius) {
 
         Set<BlockPos> shellBlocks = new HashSet<>();
         int hitRays = 0;
-        int sealedHits = 0; // строгий счётчик для проверки герметичности
         float totalDistance = 0f;
 
         double goldenRatio = (1 + Math.sqrt(5)) / 2;
@@ -101,19 +145,12 @@ public class DomeScanTask {
             double dz = Math.sin(phi) * Math.sin(theta);
 
             Vec3 direction = new Vec3(dx, dy, dz).normalize();
-
-            // Обычный raycast — с findDomeBlockNearby для построения эталона
             RayResult result = castRay(level, origin, direction, radius);
+
             if (result.hitDome || result.hitFloor) {
-                if (result.hitPos != null) shellBlocks.add(result.hitPos);
                 hitRays++;
                 totalDistance += result.distance;
-            }
-
-            // Строгий raycast — БЕЗ findDomeBlockNearby, только точное попадание
-            // Используется только для проверки герметичности
-            if (castRayStrict(level, origin, direction, radius)) {
-                sealedHits++;
+                if (result.hitPos != null) shellBlocks.add(result.hitPos);
             }
         }
 
@@ -121,38 +158,14 @@ public class DomeScanTask {
         float estimatedVolume = Math.max(1f,
                 (float)(1.33f * Math.PI * avgRadius * avgRadius * avgRadius));
 
-        // Если хоть один отсутствует — есть дыра
-        int missingBlocks = 0;
-        for (BlockPos shellPos : shellBlocks) {
-            BlockState shellState = level.getBlockState(shellPos);
-            // Дыра — это воздух на месте где должен быть блок купола
-            // Блоки пола и другие твёрдые блоки не считаем дырами
-            if (shellState.isAir()) {
-                missingBlocks++;
-            }
-        }
+        // Герметичность — flood fill от origin
+        boolean isSealed = isHermetic(level, origin, radius);
 
-        // Строгий raycast + прямая проверка эталона
-        boolean raycastSealed = sealedHits >= (int)(RAY_COUNT * 0.90f);
-        // DEBUG
+        // DEBUG — убери когда всё заработает
         level.getServer().sendSystemMessage(
                 net.minecraft.network.chat.Component.literal(
-                        "§e[SEAL CHECK] shellBlocks=" + shellBlocks.size() +
-                                " missing=" + missingBlocks +
-                                " raycastSealed=" + raycastSealed +
-                                " shellIntact=" + (missingBlocks == 0)));
-
-        boolean shellIntact   = missingBlocks == 0;
-        boolean isSealed      = raycastSealed && shellIntact;
-
-        // DEBUG
-        level.getServer().sendSystemMessage(
-                net.minecraft.network.chat.Component.literal(
-                        "§e[DEBUG SCAN] hitRays=" + hitRays +
-                                " sealedHits=" + sealedHits +
-                                " total=" + RAY_COUNT +
-                                " sealedPct=" + String.format("%.1f", sealedHits * 100f / RAY_COUNT) + "%" +
-                                " isSealed=" + isSealed));
+                        "§e[SEAL CHECK] isSealed=" + isSealed +
+                                " shellBlocks=" + shellBlocks.size()));
 
         return new ScanResult(shellBlocks, estimatedVolume, isSealed);
     }
@@ -196,45 +209,6 @@ public class DomeScanTask {
         return new RayResult(false, false, null, maxDistance);
     }
 
-    /**
-     * Строгий raycast — только точное попадание в блок купола или пол.
-     * Не использует findDomeBlockNearby — не притягивается к соседям.
-     * Используется для проверки герметичности купола.
-     */
-    private static boolean castRayStrict(ServerLevel level, BlockPos origin,
-                                         Vec3 direction, int maxDistance) {
-        double x = origin.getX() + 0.5;
-        double y = origin.getY() + 0.5;
-        double z = origin.getZ() + 0.5;
-
-        double step = 0.25;
-        int steps = (int)(maxDistance / step);
-        BlockPos lastPos = null;
-        boolean goingDown = direction.y < -0.3;
-
-        for (int i = 1; i <= steps; i++) {
-            x += direction.x * step;
-            y += direction.y * step;
-            z += direction.z * step;
-
-            BlockPos pos = BlockPos.containing(x, y, z);
-            if (pos.equals(lastPos)) continue;
-            lastPos = pos;
-
-            // Только точное попадание — никаких соседей
-            if (isDomeBlock(level.getBlockState(pos))) {
-                return true;
-            }
-
-            // Пол
-            if (goingDown && isSolidFloor(level, pos)) {
-                return true;
-            }
-        }
-
-        return false; // луч вышел наружу — дыра
-    }
-
     public static class RayResult {
         public final boolean hitDome;
         public final boolean hitFloor;
@@ -253,7 +227,7 @@ public class DomeScanTask {
     public static class ScanResult {
         public final Set<BlockPos> shell;
         public final float volume;
-        public final boolean isSealed; // герметичен ли купол
+        public final boolean isSealed;
 
         public ScanResult(Set<BlockPos> shell, float volume, boolean isSealed) {
             this.shell    = shell;
@@ -262,18 +236,13 @@ public class DomeScanTask {
         }
     }
 
-    // Собираем все блоки купола в радиусе от фильтра
-    // Это надёжнее чем raycast для построения эталона
     public static Set<BlockPos> collectAllDomeBlocks(ServerLevel level,
                                                      BlockPos origin, int radius) {
         Set<BlockPos> domeBlocks = new HashSet<>();
-
         for (int x = -radius; x <= radius; x++) {
             for (int y = -radius; y <= radius; y++) {
                 for (int z = -radius; z <= radius; z++) {
-                    // Только в пределах сферы радиуса
                     if (x*x + y*y + z*z > radius * radius) continue;
-
                     BlockPos pos = origin.offset(x, y, z);
                     if (isDomeBlock(level.getBlockState(pos))) {
                         domeBlocks.add(pos);
@@ -281,13 +250,13 @@ public class DomeScanTask {
                 }
             }
         }
-
         return domeBlocks;
     }
 
     public static class SealCheckResult {
         public final boolean isSealed;
         public final int sealedHits;
+
         public SealCheckResult(boolean isSealed, int hits) {
             this.isSealed = isSealed;
             this.sealedHits = hits;
@@ -295,27 +264,12 @@ public class DomeScanTask {
     }
 
     /**
-     * Быстрая проверка герметичности — только строгий raycast,
-     * без построения эталона. Используется для автопроверки.
+     * Проверка герметичности для автомониторинга в PlayerAtmosphereHandler.
+     * Использует тот же flood fill что и scan.
      */
-    public static SealCheckResult checkSealed(ServerLevel level, BlockPos origin, int radius) {
-        int sealedHits = 0;
-        double goldenRatio = (1 + Math.sqrt(5)) / 2;
-
-        for (int i = 0; i < RAY_COUNT; i++) {
-            double theta = 2 * Math.PI * i / goldenRatio;
-            double phi = Math.acos(1 - 2 * (i + 0.5) / RAY_COUNT);
-            double dx = Math.sin(phi) * Math.cos(theta);
-            double dy = Math.cos(phi);
-            double dz = Math.sin(phi) * Math.sin(theta);
-
-            Vec3 direction = new Vec3(dx, dy, dz).normalize();
-            if (castRayStrict(level, origin, direction, radius)) {
-                sealedHits++;
-            }
-        }
-
-        boolean isSealed = sealedHits >= (int)(RAY_COUNT * 0.90f);
-        return new SealCheckResult(isSealed, sealedHits);
+    public static SealCheckResult checkSealed(ServerLevel level,
+                                              BlockPos origin, int radius) {
+        boolean isSealed = isHermetic(level, origin, radius);
+        return new SealCheckResult(isSealed, 0);
     }
 }
