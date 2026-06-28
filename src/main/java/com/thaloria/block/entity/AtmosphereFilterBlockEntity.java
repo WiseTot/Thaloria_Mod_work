@@ -219,7 +219,11 @@ public class AtmosphereFilterBlockEntity extends BlockEntity {
                             existingZone.hasBaseline = true;
                         }
 
-                        existingZone.isSealed = result.isSealed;
+                        // Обновляем isSealed только если купол был герметичен и стал нет
+                        // Не перезаписываем false→true автоматически (это делает checkSealed)
+                        if (!result.isSealed) {
+                            existingZone.isSealed = false;
+                        }
                         zoneId = existingZone.id;
                         dataRef.setDirty();
                         existingZone.recalculateBreaches(levelRef);
