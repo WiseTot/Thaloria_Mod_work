@@ -8,6 +8,8 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.registries.ForgeRegistries;
+import java.util.HashMap;
+import java.util.Map;
 
 import java.util.ArrayDeque;
 import java.util.HashSet;
@@ -135,61 +137,54 @@ public class DomeScanTask {
             return new HermeticResult(true, new HashSet<>());
         }
 
-// Flood fill СНАРУЖИ — от всех точек на границе радиуса
-// Находим все воздушные блоки достижимые снаружи
-        Set<BlockPos> exterior = new HashSet<>();
-        Queue<BlockPos> qExt = new ArrayDeque<>();
+// Flood fill строго внутри радиуса от фильтра
+// Не останавливаемся у дыр — заполняем весь доступный объём
+        Set<BlockPos> interior = new HashSet<>();
+        Queue<BlockPos> q2 = new ArrayDeque<>();
+        q2.add(origin);
+        interior.add(origin);
 
-// Стартуем с всех граничных точек
-        for (int x = -radius; x <= radius; x++) {
-            for (int y = -radius; y <= radius; y++) {
-                for (int z = -radius; z <= radius; z++) {
-                    if (Math.abs(x) == radius || Math.abs(y) == radius || Math.abs(z) == radius) {
-                        BlockPos p = origin.offset(x, y, z);
-                        if (!exterior.contains(p)) {
-                            BlockState st = level.getBlockState(p);
-                            if (!isDomeBlock(st) && !isSolidFloor(level, p)) {
-                                exterior.add(p);
-                                qExt.add(p);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-// Flood fill снаружи внутрь (но не за границу)
-        while (!qExt.isEmpty()) {
-            BlockPos pos = qExt.poll();
+        while (!q2.isEmpty()) {
+            BlockPos pos = q2.poll();
             for (int i = 0; i < 6; i++) {
                 BlockPos next = pos.offset(ddx[i], ddy[i], ddz[i]);
-                if (exterior.contains(next)) continue;
-                if (Math.abs(next.getX() - origin.getX()) > radius ||
-                        Math.abs(next.getY() - origin.getY()) > radius ||
-                        Math.abs(next.getZ() - origin.getZ()) > radius) continue;
+                if (interior.contains(next)) continue;
+
+                // Строго не выходим за радиус
+                if (Math.abs(next.getX() - origin.getX()) >= radius ||
+                        Math.abs(next.getY() - origin.getY()) >= radius ||
+                        Math.abs(next.getZ() - origin.getZ()) >= radius) continue;
 
                 BlockState state = level.getBlockState(next);
-                if (isDomeBlock(state) || isSolidFloor(level, pos)) continue;
+                if (isDomeBlock(state) || isSolidFloor(level, next)) continue;
 
-                exterior.add(next);
-                qExt.add(next);
+                interior.add(next);
+                q2.add(next);
             }
         }
 
-// Дыры — воздушные блоки из exterior которые граничат с блоком купола
-// и при этом с другой стороны тоже воздух (не в exterior — т.е. внутри)
+// Дыры — блоки из interior которые граничат с воздухом ЗА границей радиуса
+// Это единственное место где interior "вытекает" наружу
         Set<BlockPos> leaks = new HashSet<>();
-        for (BlockPos pos : exterior) {
+        for (BlockPos pos : interior) {
             for (int i = 0; i < 6; i++) {
                 BlockPos neighbor = pos.offset(ddx[i], ddy[i], ddz[i]);
-                if (isDomeBlock(level.getBlockState(neighbor))) continue;
-                if (isSolidFloor(level, neighbor)) continue;
-                // Сосед — воздух но НЕ в exterior → это внутреннее пространство
-                // Значит pos граничит с внутренним через дыру
-                if (!exterior.contains(neighbor)) {
-                    leaks.add(pos); // показываем внешний край дыры
-                    break;
-                }
+
+                // Сосед за пределами радиуса?
+                boolean outsideRadius =
+                        Math.abs(neighbor.getX() - origin.getX()) >= radius ||
+                                Math.abs(neighbor.getY() - origin.getY()) >= radius ||
+                                Math.abs(neighbor.getZ() - origin.getZ()) >= radius;
+
+                if (!outsideRadius) continue;
+
+                // Сосед — воздух (не купол, не пол)?
+                BlockState neighborState = level.getBlockState(neighbor);
+                if (isDomeBlock(neighborState) || isSolidFloor(level, neighbor)) continue;
+
+                // pos — воздушный блок внутри у края дыры
+                leaks.add(pos);
+                break;
             }
         }
 

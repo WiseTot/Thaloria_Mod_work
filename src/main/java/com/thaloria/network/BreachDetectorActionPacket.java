@@ -11,6 +11,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.PacketDistributor;
+import java.util.HashSet;
+import java.util.Set;
 
 import java.util.ArrayList;
 import java.util.function.Supplier;
@@ -72,56 +74,62 @@ public class BreachDetectorActionPacket {
                     }
 
                     if (!zone.isSealed) {
-                        // Купол не герметичен — показываем дыры через flood fill
-                        // Берём позицию фильтра как точку старта
+                        // Дыры = воздушные блоки которые граничат с блоками купола
+                        // минимум с 2 сторон (угол дыры) — это точно место в стене
                         BlockPos filterPos = zone.filters.isEmpty() ? null
                                 : zone.filters.iterator().next();
+                        if (filterPos == null) return;
 
-                        if (filterPos == null) {
-                            player.sendSystemMessage(Component.literal(
-                                    "§c[Thaloria] No filter found in zone!"));
-                            return;
+                        Set<BlockPos> allDome = new HashSet<>(
+                                com.thaloria.dome.DomeScanTask.collectAllDomeBlocks(
+                                        level, filterPos, zone.scanRadius));
+
+                        Set<BlockPos> leaks = new HashSet<>();
+                        int[] ddx = {1,-1,0,0,0,0};
+                        int[] ddy = {0,0,1,-1,0,0};
+                        int[] ddz = {0,0,0,0,1,-1};
+
+                        for (BlockPos domePos : allDome) {
+                            // Для каждого блока купола смотрим соседей
+                            for (int i = 0; i < 6; i++) {
+                                BlockPos neighbor = domePos.offset(ddx[i], ddy[i], ddz[i]);
+                                // Сосед — воздух и не в эталоне
+                                if (!level.getBlockState(neighbor).isAir()) continue;
+                                if (allDome.contains(neighbor)) continue;
+
+                                int domeNeighbors = 0;
+                                for (int j = 0; j < 6; j++) {
+                                    BlockPos nn = neighbor.offset(ddx[j], ddy[j], ddz[j]);
+                                    if (allDome.contains(nn)) domeNeighbors++;
+                                }
+
+                                boolean isHole = false;
+                                int[][] pairs = {{0,1},{2,3},{4,5}};
+                                for (int[] pair : pairs) {
+                                    BlockPos a = neighbor.offset(ddx[pair[0]], ddy[pair[0]], ddz[pair[0]]);
+                                    BlockPos b = neighbor.offset(ddx[pair[1]], ddy[pair[1]], ddz[pair[1]]);
+                                    if (allDome.contains(a) && allDome.contains(b)) {
+                                        isHole = true;
+                                        break;
+                                    }
+                                }
+
+                                if (isHole) {
+                                    leaks.add(neighbor);
+                                }
+                            }
                         }
 
-                        java.util.Set<BlockPos> leaks = com.thaloria.dome.DomeScanTask
-                                .findLeakPositions(level, filterPos, zone.scanRadius);
-
                         if (leaks.isEmpty()) {
-                            // Flood fill не нашёл дыр — может купол уже герметичен
                             player.sendSystemMessage(Component.literal(
-                                    "§e[Thaloria] No leak positions found. " +
-                                            "Try pressing Update Baseline on the filter."));
+                                    "§e[Thaloria] No specific leak positions found."));
                         } else {
                             ModNetwork.CHANNEL.send(
                                     PacketDistributor.PLAYER.with(() -> player),
-                                    new SyncBreachesPacket(
-                                            new ArrayList<>(leaks),
-                                            packet.detectorPos
-                                    )
-                            );
+                                    new SyncBreachesPacket(new ArrayList<>(leaks), packet.detectorPos));
                             player.sendSystemMessage(Component.literal(
-                                    "§e[Thaloria] Found " + leaks.size() +
-                                            " leak position(s)! Dome is NOT sealed."));
+                                    "§e[Thaloria] Found " + leaks.size() + " leak position(s)!"));
                         }
-
-                    } else {
-                        // Купол герметичен — обычная проверка брешей через эталон
-                        zone.recalculateBreaches(level);
-                        DomeZoneSavedData.get(level).setDirty();
-
-                        ModNetwork.CHANNEL.send(
-                                PacketDistributor.PLAYER.with(() -> player),
-                                new SyncBreachesPacket(
-                                        new ArrayList<>(zone.breaches),
-                                        packet.detectorPos
-                                )
-                        );
-
-                        player.sendSystemMessage(Component.literal(
-                                zone.breaches.isEmpty()
-                                        ? "§a[Thaloria] No breaches detected!"
-                                        : "§e[Thaloria] Found " + zone.breaches.size() + " breach(es)!"
-                        ));
                     }
                 }
 
